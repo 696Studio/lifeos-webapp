@@ -10,12 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
-# URL MiniApp — по умолчанию наш Vercel + экран Earn
-MINIAPP_URL = os.getenv(
-    "MINIAPP_URL",
-    "https://lifeos-webapp.vercel.app/earn",
-)
+MINIAPP_URL = os.getenv("MINIAPP_URL", "https://lifeos-webapp.vercel.app/earn")
 
 if not BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")

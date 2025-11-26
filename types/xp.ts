@@ -1,8 +1,20 @@
 // types/xp.ts
 
-export type XpTaskCategory = 'invite' | 'stream' | 'help' | 'lessons' | 'ideas';
+// Добавили категорию "learn"
+// (иначе earn/page.tsx ломает билд на Vercel)
+export type XpTaskCategory =
+  | 'invite'
+  | 'stream'
+  | 'help'
+  | 'lessons'
+  | 'ideas'
+  | 'learn';
 
-export type XpTaskStatus = 'available' | 'pending' | 'completed' | 'locked';
+export type XpTaskStatus =
+  | 'available'
+  | 'pending'
+  | 'completed'
+  | 'locked';
 
 export interface XpTask {
   id: string;
