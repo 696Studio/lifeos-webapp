@@ -6,18 +6,22 @@ from aiogram.filters import CommandStart
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 from dotenv import load_dotenv
 
-# Загружаем переменные из .env (включая TELEGRAM_BOT_TOKEN)
+# Загружаем переменные окружения из .env
 load_dotenv()
+
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# URL MiniApp — по умолчанию наш Vercel + экран Earn
+MINIAPP_URL = os.getenv(
+    "MINIAPP_URL",
+    "https://lifeos-webapp.vercel.app/earn",
+)
 
 if not BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
-
-# ВРЕМЕННЫЙ URL MiniApp — позже подставим реальный (Vercel / ngrok)
-MINIAPP_URL = "https://example.com"
 
 
 @dp.message(CommandStart())
@@ -36,8 +40,7 @@ async def cmd_start(message: types.Message):
 
     await message.answer(
         "Добро пожаловать в LifeOS WebApp бот.\n\n"
-        "Кнопкой ниже ты сможешь открыть мини-приложение LifeOS XP "
-        "(как только мы задеплоим его по https).",
+        "Нажми кнопку ниже, чтобы открыть LifeOS XP Mini App внутри Telegram.",
         reply_markup=keyboard,
     )
 
