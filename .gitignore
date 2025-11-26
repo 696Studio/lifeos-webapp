@@ -48,3 +48,7 @@ next-env.d.ts
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 >>>>>>> e9616fc37d54a64c1e863768874205c07eba0c7d
+# LifeOS XP backend (Python)
+xp-backend/venv/
+xp-backend/__pycache__/
+xp-backend/.env
