@@ -59,7 +59,30 @@ export default function HomePage() {
     setStoreUserId(String(userId));
   }, [isTelegram, userId, setStoreUserId]);
 
+  // 🔹 Читаем данные юзера из Telegram WebApp (для аватарки и ника)
+  useEffect(() => {
+    if (!isTelegram) return;
+    if (typeof window === "undefined") return;
+
+    try {
+      const anyWindow = window as any;
+      const tg = anyWindow.Telegram?.WebApp;
+      const user: TgUser | undefined = tg?.initDataUnsafe?.user;
+      if (user) {
+        setTgUser(user);
+      }
+    } catch (e) {
+      console.error("Failed to read Telegram user", e);
+    }
+  }, [isTelegram]);
+
+  const displayName =
+    tgUser?.username ||
+    [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
+    "Telegram user";
+
   // 🔐 Синхронизация профиля в Supabase по Telegram userId + гидрация стора
+  // + отправляем telegramUsername в бэкенд
   useEffect(() => {
     // если не в Telegram — не дёргаем API
     if (!isTelegram) return;
@@ -67,6 +90,8 @@ export default function HomePage() {
     if (!userId || !initDataRaw) return;
     // базовая защита от пустых статов
     if (totalXP == null || level == null) return;
+
+    const telegramUsername = tgUser?.username ?? null;
 
     const syncProfile = async () => {
       try {
@@ -78,6 +103,7 @@ export default function HomePage() {
           body: JSON.stringify({
             userId,
             initData: initDataRaw,
+            telegramUsername,
             stats: {
               totalXp: totalXP,
               level,
@@ -141,29 +167,8 @@ export default function HomePage() {
     currentXP,
     nextLevelXP,
     hydrateFromServer,
+    tgUser,
   ]);
-
-  // 🔹 Читаем данные юзера из Telegram WebApp (для аватарки и ника)
-  useEffect(() => {
-    if (!isTelegram) return;
-    if (typeof window === "undefined") return;
-
-    try {
-      const anyWindow = window as any;
-      const tg = anyWindow.Telegram?.WebApp;
-      const user: TgUser | undefined = tg?.initDataUnsafe?.user;
-      if (user) {
-        setTgUser(user);
-      }
-    } catch (e) {
-      console.error("Failed to read Telegram user", e);
-    }
-  }, [isTelegram]);
-
-  const displayName =
-    tgUser?.username ||
-    [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
-    "Telegram user";
 
   return (
     <main

@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabaseClient";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { userId, stats } = body;
+    const { userId, stats, telegramUsername } = body;
 
     if (!userId || !stats) {
       return NextResponse.json(
@@ -27,6 +27,7 @@ export async function POST(req: Request) {
       .upsert(
         {
           telegram_user_id: numericUserId,
+          telegram_username: telegramUsername ?? null,
           total_xp: stats.totalXp,
           level: stats.level,
           current_xp: stats.currentXp,
