@@ -23,30 +23,52 @@ export function useTelegram() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const tg = window.Telegram?.WebApp;
-    if (!tg) return;
+    let attempts = 0;
+    const maxAttempts = 50; // до ~5 секунд (50 * 100ms)
 
-    // говорим Telegram, что WebApp готов
-    tg.ready();
-    setWebApp(tg);
+    const interval = setInterval(() => {
+      const tg = window.Telegram?.WebApp;
 
-    // initData — сырая строка, которую потом можно валидировать на бэке
-    if (tg.initData) {
-      setInitDataRaw(tg.initData as string);
-    }
+      // Telegram WebApp ещё не проинициализировался — ждём
+      if (!tg) {
+        attempts += 1;
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+        }
+        return;
+      }
 
-    // initDataUnsafe.user — объект с данными пользователя
-    if (tg.initDataUnsafe?.user) {
-      const u = tg.initDataUnsafe.user as TelegramUser;
-      setUser(u);
-      setUserId(String(u.id));
-      setUsername(u.username ?? null);
-    }
+      // нашли WebApp — инициализируем и останавливаем таймер
+      try {
+        tg.ready();
+      } catch (e) {
+        // на всякий случай, чтобы ошибка не роняла эффект
+        console.error("tg.ready() error:", e);
+      }
+
+      setWebApp(tg);
+
+      if (tg.initData) {
+        setInitDataRaw(tg.initData as string);
+      }
+
+      if (tg.initDataUnsafe?.user) {
+        const u = tg.initDataUnsafe.user as TelegramUser;
+        setUser(u);
+        setUserId(String(u.id));
+        setUsername(u.username ?? null);
+      }
+
+      clearInterval(interval);
+    }, 100);
+
+    return () => {
+      clearInterval(interval);
+    };
   }, []);
 
   const isTelegram = Boolean(webApp);
 
-  // оставляем initData для обратной совместимости (это то же самое, что initDataRaw)
   return {
     webApp,
     user,
