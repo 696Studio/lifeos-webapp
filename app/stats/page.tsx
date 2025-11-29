@@ -180,7 +180,6 @@ export default function StatsPage() {
     "Возгорание Сознания",
     "Ступень Отречения",
     "Посвящённый",
-    "Пересечение Теней",
     "Носитель Пламени",
     "Избранный Узел",
   ];
@@ -201,6 +200,42 @@ export default function StatsPage() {
   const trophiesUnlocked = trophiesToRender.filter(
     (t) => t.unlocked || t.unlockedAt
   ).length;
+
+  // ====== MODAL: выбранный трофей ======
+  const [selectedTrophy, setSelectedTrophy] = useState<ApiTrophy | null>(null);
+
+  const handleOpenTrophy = (t: ApiTrophy) => {
+    setSelectedTrophy(t);
+  };
+
+  const handleCloseTrophy = () => {
+    setSelectedTrophy(null);
+  };
+
+  const getTrophySubtitle = (t: ApiTrophy) => {
+    const unlocked = t.unlocked || Boolean(t.unlockedAt);
+    if (!unlocked) {
+      return "Печать ещё не сорвана. Условие скрыто до момента активации.";
+    }
+    const date = formatDate(t.unlockedAt);
+    if (!date) {
+      return "Трофей активирован системой.";
+    }
+    return `Трофей активирован: ${date}`;
+  };
+
+  const getTrophyTitle = (t: ApiTrophy) => {
+    if (t.title) return t.title;
+    const idx = trophiesToRender.findIndex((x) => x.code === t.code);
+    if (idx >= 0) return defaultTrophyTitles[idx] ?? t.code;
+    return t.code;
+  };
+
+  const getTrophyGlyph = (t: ApiTrophy) => {
+    const idx = trophiesToRender.findIndex((x) => x.code === t.code);
+    if (idx >= 0) return glyphs[idx % glyphs.length];
+    return glyphs[0];
+  };
 
   // ====== UI ======
   return (
@@ -252,7 +287,7 @@ export default function StatsPage() {
                 style={{
                   width: `${progressPercent}%`,
                   height: "100%",
-                  background: "linear-gradient(90deg, #00ffff, #00c6ff)",
+                  background: "linear-gradient(90deg, #00ffff, #00c6ff)`,
                   transition: "width 0.2s ease-out",
                 }}
               />
@@ -339,10 +374,12 @@ export default function StatsPage() {
                 const glyph = glyphs[idx % glyphs.length];
 
                 return (
-                  <div
+                  <button
                     key={t.code ?? idx}
+                    type="button"
+                    onClick={() => handleOpenTrophy(t)}
                     className={[
-                      "rounded-2xl px-2.5 py-3 border text-center",
+                      "rounded-2xl px-2.5 py-3 border text-center transition-transform duration-150 active:scale-95",
                       unlocked
                         ? "border-cyan-400/50 bg-[radial-gradient(circle_at_top,#04232f,#020712)] shadow-[0_0_22px_rgba(0,229,255,0.45)]"
                         : "border-zinc-700/60 bg-[radial-gradient(circle_at_top,#050816,#020308)] opacity-75",
@@ -371,7 +408,7 @@ export default function StatsPage() {
                     <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-zinc-500">
                       {unlocked ? "ОТКРЫТ" : "ЗАПЕРТ"}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -414,6 +451,67 @@ export default function StatsPage() {
           </div>
         </section>
       </div>
+
+      {/* ===== MODAL: ТРОФЕЙ ===== */}
+      {selectedTrophy && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-[420px] rounded-t-3xl border border-white/10 bg-[#050509] px-4 pb-6 pt-4 shadow-[0_-20px_60px_rgba(0,0,0,0.9)]">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                Артефакт ордена
+              </p>
+              <button
+                type="button"
+                onClick={handleCloseTrophy}
+                className="rounded-full bg-zinc-900/80 px-2 py-1 text-[11px] text-zinc-400"
+              >
+                Закрыть
+              </button>
+            </div>
+
+            <div className="mb-3 flex items-center gap-3">
+              <div
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-cyan-400/70 text-lg font-semibold text-cyan-200"
+                style={{
+                  boxShadow: "0 0 20px rgba(0,229,255,0.7)",
+                }}
+              >
+                <span style={{ letterSpacing: "0.08em" }}>
+                  {getTrophyGlyph(selectedTrophy)}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <div className="text-sm font-semibold text-zinc-50">
+                  {getTrophyTitle(selectedTrophy)}
+                </div>
+                <div className="text-[11px] text-zinc-500">
+                  {selectedTrophy.unlocked || selectedTrophy.unlockedAt
+                    ? "Печать снята. Система признала это достижение."
+                    : "Печать активна. Условие получения скрыто."}
+                </div>
+              </div>
+            </div>
+
+            {selectedTrophy.description && (
+              <p className="text-[12px] leading-snug text-zinc-300">
+                {selectedTrophy.description}
+              </p>
+            )}
+
+            {!selectedTrophy.description && (
+              <p className="text-[12px] leading-snug text-zinc-400">
+                Этот знак — часть внутреннего алфавита LifeOS. Он не объясняет
+                себя словами, он просто фиксирует факт: когда-то ты сделал ход,
+                который система сочла значимым.
+              </p>
+            )}
+
+            <p className="mt-3 text-[11px] text-zinc-500">
+              {getTrophySubtitle(selectedTrophy)}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
