@@ -1,35 +1,59 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { telegram } from "../lib/telegram";
+import type { TelegramUser } from "../lib/telegram";
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: any;
+    };
+  }
+}
 
 export function useTelegram() {
-  const [user, setUser] = useState<any>(null);
-  const [initDataRaw, setInitDataRaw] = useState<string | null>(null);
+  const [webApp, setWebApp] = useState<any | null>(null);
+  const [user, setUser] = useState<TelegramUser | null>(null);
+
+  // сырые данные от Telegram WebApp
+  const [initDataRaw, setInitDataRaw] = useState<string>("");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!telegram) return;
+    if (typeof window === "undefined") return;
 
-    // initData — строка, которую потом нужно проверять на бэкенде
-    // initDataUnsafe — уже распарсенный объект
-    const unsafe = (telegram as any).initDataUnsafe;
-    const raw = (telegram as any).initData as string | undefined;
+    const tg = window.Telegram?.WebApp;
+    if (!tg) return;
 
-    if (unsafe?.user) {
-      setUser(unsafe.user);
+    // говорим Telegram, что WebApp готов
+    tg.ready();
+    setWebApp(tg);
+
+    // initData — сырая строка, которую потом можно валидировать на бэке
+    if (tg.initData) {
+      setInitDataRaw(tg.initData as string);
     }
-    if (raw) {
-      setInitDataRaw(raw);
+
+    // initDataUnsafe.user — объект с данными пользователя
+    if (tg.initDataUnsafe?.user) {
+      const u = tg.initDataUnsafe.user as TelegramUser;
+      setUser(u);
+      setUserId(String(u.id));
+      setUsername(u.username ?? null);
     }
   }, []);
 
+  const isTelegram = Boolean(webApp);
+
+  // оставляем initData для обратной совместимости (это то же самое, что initDataRaw)
   return {
+    webApp,
     user,
-    userId: user?.id,
-    username: user?.username,
-    firstName: user?.first_name,
-    lastName: user?.last_name,
-    avatar: user?.photo_url,
-    initDataRaw, // <- важное поле для сервера
+    userId,
+    username,
+    initData: initDataRaw,
+    initDataRaw,
+    isTelegram,
   };
 }

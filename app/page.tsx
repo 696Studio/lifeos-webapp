@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import Card from "./Card";
 import { useXpStore } from "../store/xpStore";
 import { useRouter } from "next/navigation";
+import { useTelegram } from "../hooks/useTelegram";
 
 export default function HomePage() {
   const router = useRouter();
+  const { userId, initDataRaw } = useTelegram();
 
   // данные из стора
   const level = useXpStore((s) => s.getLevel());
@@ -17,7 +19,7 @@ export default function HomePage() {
   const nextLevelXP = stats.nextLevelXp;
   const totalXP = stats.totalXp;
 
-  // ❗ триггер Level Up
+  // триггер Level Up
   const lastLevelUpAt = useXpStore((s) => s.lastLevelUpAt);
   const [flash, setFlash] = useState(false);
 
@@ -30,6 +32,34 @@ export default function HomePage() {
     return () => clearTimeout(t);
   }, [lastLevelUpAt]);
 
+  // 🔐 Синхронизация профиля в Supabase по Telegram userId
+  useEffect(() => {
+    if (!userId) return; // Ждём пока Telegram даст userId
+
+    const syncProfile = async () => {
+      try {
+        await fetch("/api/xp/profile/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            initData: initDataRaw ?? "",
+            stats: {
+              totalXp: totalXP,
+              level,
+              currentXp: currentXP,
+              nextLevelXp: nextLevelXP,
+            },
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to sync XP profile", err);
+      }
+    };
+
+    syncProfile();
+  }, [userId, initDataRaw, totalXP, level, currentXP, nextLevelXP]);
+
   return (
     <main
       style={{
@@ -41,14 +71,10 @@ export default function HomePage() {
       }}
     >
       <Card>
-        <h2
-          style={{
-            fontSize: "24px",
-            marginBottom: "8px",
-          }}
-        >
+        <h2 style={{ fontSize: "24px", marginBottom: "8px" }}>
           LifeOS XP System
         </h2>
+
         <p
           style={{
             color: "rgba(148, 163, 184, 0.9)",
@@ -60,11 +86,7 @@ export default function HomePage() {
         </p>
 
         {/* Уровень + прогресс */}
-        <div
-          style={{
-            marginBottom: "16px",
-          }}
-        >
+        <div style={{ marginBottom: "16px" }}>
           <div
             style={{
               display: "flex",
@@ -79,7 +101,6 @@ export default function HomePage() {
             </span>
           </div>
 
-          {/* ⚡ Прогрессбар со вспышкой при Level Up */}
           <div
             style={{
               width: "100%",
@@ -114,7 +135,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Кнопки действий */}
+        {/* Кнопки */}
         <div
           style={{
             display: "flex",

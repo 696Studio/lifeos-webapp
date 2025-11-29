@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Card from "../Card";
 import { useXpStore } from "../../store/xpStore";
 
@@ -8,10 +8,61 @@ export default function EarnPage() {
   const tasks = useXpStore((s) => s.profile.tasks);
   const addXp = useXpStore((s) => s.addXp);
   const completeTask = useXpStore((s) => s.completeTask);
+  const setTasksFromDb = useXpStore((s) => s.setTasksFromDb);
+
+  const level = useXpStore((s) => s.getLevel());
+  const progressPercent = useXpStore((s) => s.getProgressPercent());
+  const stats = useXpStore((s) => s.profile.stats);
+
+  const currentXP = stats.currentXp;
+  const nextLevelXP = stats.nextLevelXp;
 
   // локальный стейт для эффектов
   const [xpPopup, setXpPopup] = useState<null | { amount: number; taskId: string }>(null);
   const [levelUp, setLevelUp] = useState<null | { from: number; to: number }>(null);
+
+  // 🔄 Подгружаем задачи из Supabase через API (один раз при монтировании)
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const res = await fetch("/api/xp/tasks");
+        if (!res.ok) {
+          console.error("Failed to load tasks from API");
+          return;
+        }
+
+        const data = await res.json();
+
+        const tasksFromDb = (data.tasks ?? []).map((t: any) => {
+          // Мапим статус БД -> фронт
+          // active -> available, locked -> locked
+          const status =
+            t.status === "locked"
+              ? "locked"
+              : "available";
+
+          return {
+            id: t.id,
+            title: t.title,
+            description: t.description ?? "",
+            category: t.category,
+            xp: t.xp,
+            status,
+            maxRepeats: t.max_repeats ?? undefined,
+            // timesCompleted не задаём — стор сам начнёт с 0
+          };
+        });
+
+        if (tasksFromDb.length > 0) {
+          setTasksFromDb(tasksFromDb);
+        }
+      } catch (e) {
+        console.error("Failed to load tasks from Supabase", e);
+      }
+    };
+
+    loadTasks();
+  }, [setTasksFromDb]);
 
   const handleTaskClick = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
@@ -197,6 +248,7 @@ export default function EarnPage() {
         }}
       >
         <Card>
+          {/* Верхний блок: инфо про уровень */}
           <h2
             style={{
               fontSize: "22px",
@@ -215,6 +267,86 @@ export default function EarnPage() {
             Выполняй задания, чтобы поднимать уровень и открывать трофеи.
           </p>
 
+          <section
+            style={{
+              padding: "16px 16px 14px",
+              borderRadius: "18px",
+              background: "rgba(15, 23, 42, 0.95)",
+              boxShadow: "0 0 20px rgba(15,23,42,0.7)",
+              marginBottom: "20px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: "8px",
+                fontSize: "13px",
+                color: "#94a3b8",
+              }}
+            >
+              <span>Твой уровень</span>
+              <span>XP</span>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "8px",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "16px",
+                  fontWeight: 600,
+                  color: "#e5f2ff",
+                }}
+              >
+                Level {level}
+              </span>
+              <span
+                style={{
+                  fontSize: "14px",
+                  color: "#e5f2ff",
+                }}
+              >
+                {currentXP} / {nextLevelXP}
+              </span>
+            </div>
+
+            <div
+              style={{
+                width: "100%",
+                height: "8px",
+                borderRadius: "999px",
+                background: "#11181c",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${progressPercent}%`,
+                  height: "100%",
+                  background: "linear-gradient(90deg, #00ffff, #00c6ff)",
+                  transition: "width 0.2s ease-out",
+                }}
+              />
+            </div>
+
+            <p
+              style={{
+                marginTop: "8px",
+                fontSize: "12px",
+                color: "#7b8a90",
+              }}
+            >
+              Выполняй задания ниже, чтобы двигать шкалу вправо и открывать новые уровни.
+            </p>
+          </section>
+
+          {/* Секции задач */}
           {inviteTasks.length > 0 && (
             <section style={{ marginBottom: "20px" }}>
               <h3

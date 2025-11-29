@@ -1,69 +1,22 @@
 "use client";
 
-import { useState } from "react";
 import Card from "../Card";
 import { useXpStore } from "../../store/xpStore";
-import { useTelegram } from "../../hooks/useTelegram";
 
 export default function ClaimPage() {
   const stats = useXpStore((s) => s.profile.stats);
-  const addXp = useXpStore((s) => s.addXp);
-  const { userId, initDataRaw } = useTelegram();
 
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
-  const [message, setMessage] = useState<string | null>(null);
-  const [awardedXp, setAwardedXp] = useState<number | null>(null);
+  const level = stats.level;
+  const totalXp = stats.totalXp;
+  const currentXp = stats.currentXp;
+  const nextLevelXp = stats.nextLevelXp;
 
-  const handleClaim = async () => {
-    if (loading) return;
-
-    setLoading(true);
-    setStatus("idle");
-    setMessage(null);
-    setAwardedXp(null);
-
-    try {
-      const res = await fetch("/api/xp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: userId ?? "mock-user-001",
-          initData: initDataRaw ?? "LOCAL_DEV", // в Telegram тут будет реальная строка
-        }),
-      });
-
-      const data = await res.json();
-      console.log("XP CLAIM API RESPONSE:", data);
-
-      if (data?.ok && typeof data.awardedXp === "number") {
-        addXp(data.awardedXp, {
-          source: "server",
-          taskId: "claim-api",
-        });
-
-        setAwardedXp(data.awardedXp);
-        setStatus("success");
-        setMessage(`+${data.awardedXp} XP зачислено на аккаунт`);
-      } else {
-        setStatus("error");
-        setMessage("Сервер не выдал XP. Попробуй ещё раз позже.");
-      }
-    } catch (err) {
-      console.error(err);
-      setStatus("error");
-      setMessage("Ошибка запроса. Проверь соединение и повтори попытку.");
-    } finally {
-      setLoading(false);
+  const handleOpenBot = () => {
+    // Открываем бота в новом окне/табе
+    if (typeof window !== "undefined") {
+      window.open("https://t.me/Lifeos_webapp_bot", "_blank");
     }
   };
-
-  const buttonLabel =
-    status === "success"
-      ? "XP зачислен"
-      : loading
-      ? "Запрос..."
-      : "Получить XP с сервера";
 
   return (
     <main
@@ -82,7 +35,7 @@ export default function ClaimPage() {
             marginBottom: "8px",
           }}
         >
-          Получить XP
+          Получить награды
         </h2>
 
         <p
@@ -92,123 +45,179 @@ export default function ClaimPage() {
             marginBottom: "20px",
           }}
         >
-          В Telegram Mini App сюда придёт подтверждение от бота.
-          Сейчас — тестовый запрос через API.
+          Здесь ты подтверждаешь действия и получаешь реальные XP через бота
+          LifeOS. Всё просто: сделал — отправил — получил.
         </p>
 
         {/* Блок текущего статуса аккаунта */}
-        <div
+        <section
           style={{
             marginBottom: "20px",
-            fontSize: "13px",
-            color: "#7b8a90",
-            padding: "12px 14px",
-            borderRadius: "14px",
-            background: "rgba(15, 23, 42, 0.9)",
+            padding: "14px 16px",
+            borderRadius: "18px",
+            background: "rgba(15, 23, 42, 0.95)",
             border: "1px solid rgba(148, 163, 184, 0.35)",
           }}
         >
           <div
             style={{
-              marginBottom: "4px",
               display: "flex",
               justifyContent: "space-between",
+              marginBottom: "6px",
+              fontSize: "13px",
+              color: "#7b8a90",
             }}
           >
-            <span>Уровень</span>
-            <b>Lvl {stats.level}</b>
+            <span>Текущий уровень</span>
+            <span>Прогресс уровня</span>
           </div>
+
           <div
             style={{
-              marginBottom: "4px",
               display: "flex",
               justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "8px",
             }}
           >
-            <span>Всего XP</span>
-            <b>{stats.totalXp.toLocaleString("ru-RU")} XP</b>
+            <span
+              style={{
+                fontSize: "18px",
+                fontWeight: 600,
+                color: "#e5f2ff",
+              }}
+            >
+              Level {level}
+            </span>
+            <span
+              style={{
+                fontSize: "14px",
+                color: "#e5f2ff",
+              }}
+            >
+              {currentXp} / {nextLevelXp} XP
+            </span>
           </div>
+
           <div
             style={{
-              marginTop: "4px",
+              width: "100%",
+              height: "8px",
+              borderRadius: "999px",
+              background: "#11181c",
+              overflow: "hidden",
+              marginBottom: "6px",
+            }}
+          >
+            <div
+              style={{
+                width:
+                  nextLevelXp > 0
+                    ? `${Math.min(100, (currentXp / nextLevelXp) * 100)}%`
+                    : "100%",
+                height: "100%",
+                background: "linear-gradient(90deg, #22c55e, #4ade80)",
+                transition: "width 0.2s ease-out",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
               display: "flex",
               justifyContent: "space-between",
               fontSize: "12px",
-              opacity: 0.9,
+              color: "#7b8a90",
             }}
           >
-            <span>userId</span>
-            <span>{userId ?? "mock-user-001"}</span>
+            <span>Всего опыта</span>
+            <span>{totalXp.toLocaleString("ru-RU")} XP</span>
           </div>
-        </div>
+        </section>
 
-        {/* Сообщение о статусе Claim */}
-        {status !== "idle" && message && (
+        {/* Как работает Claim */}
+        <section
+          style={{
+            marginBottom: "20px",
+            fontSize: "13px",
+            color: "#cbd5f5",
+          }}
+        >
           <div
             style={{
-              marginBottom: "16px",
               fontSize: "13px",
-              padding: "10px 12px",
-              borderRadius: "12px",
-              background:
-                status === "success"
-                  ? "rgba(22, 163, 74, 0.12)"
-                  : "rgba(239, 68, 68, 0.08)",
-              border:
-                status === "success"
-                  ? "1px solid rgba(34, 197, 94, 0.5)"
-                  : "1px solid rgba(248, 113, 113, 0.5)",
-              color: status === "success" ? "#bbf7d0" : "#fecaca",
-              textAlign: "center",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "#6b7b84",
+              marginBottom: "8px",
             }}
           >
-            {message}
+            Как получить XP
           </div>
-        )}
 
-        {/* Кнопка Claim */}
+          <ol
+            style={{
+              listStyle: "decimal",
+              paddingLeft: "18px",
+              margin: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            <li>
+              Выполни задания во вкладке{" "}
+              <span style={{ fontWeight: 500 }}>Earn</span> —
+              приглашения, стримы, идеи, помощь.
+            </li>
+            <li>
+              Собери доказательства: скрины, ссылки, чекбэки, любые подтверждения
+              того, что ты реально сделал.
+            </li>
+            <li>
+              Напиши боту{" "}
+              <span style={{ fontWeight: 500 }}>@Lifeos_webapp_bot</span> и
+              отправь свои доказательства.
+            </li>
+            <li>
+              После проверки админом XP будут зачислены на твой аккаунт и
+              моментально отобразятся в Home / Earn / Stats.
+            </li>
+          </ol>
+        </section>
+
+        {/* Кнопка перехода к боту */}
         <button
-          onClick={handleClaim}
-          disabled={loading}
+          onClick={handleOpenBot}
           style={{
             width: "100%",
             padding: "14px 16px",
             borderRadius: "999px",
             border: "none",
-            cursor: loading ? "default" : "pointer",
-            background:
-              status === "success"
-                ? "linear-gradient(90deg, #22c55e, #16a34a)"
-                : loading
-                ? "linear-gradient(90deg, #6b7280, #4b5563)"
-                : "linear-gradient(90deg, #22c55e, #16a34a)",
+            cursor: "pointer",
+            background: "linear-gradient(90deg, #22c55e, #16a34a)",
             color: "#020b10",
             fontWeight: 600,
             fontSize: "14px",
-            boxShadow:
-              status === "success"
-                ? "0 0 18px rgba(34, 197, 94, 0.55)"
-                : "0 0 18px rgba(34, 197, 94, 0.45)",
+            boxShadow: "0 0 18px rgba(34, 197, 94, 0.55)",
             transition:
               "background 0.15s ease-out, box-shadow 0.15s ease-out, transform 0.08s ease-out",
-            transform: loading ? "scale(1)" : "scale(1.01)",
           }}
         >
-          {buttonLabel}
+          Открыть бота и запросить XP
         </button>
 
-        {awardedXp !== null && status === "success" && (
-          <p
-            style={{
-              marginTop: "10px",
-              fontSize: "12px",
-              color: "#6ee7b7",
-              textAlign: "center",
-            }}
-          >
-            Твой баланс и уровень уже обновлены на главной и в статистике.
-          </p>
-        )}
+        <p
+          style={{
+            marginTop: "10px",
+            fontSize: "12px",
+            color: "#7b8a90",
+            textAlign: "center",
+          }}
+        >
+          После подтверждения XP автоматически попадут в твою систему и
+          поднимут уровень.
+        </p>
       </Card>
     </main>
   );
