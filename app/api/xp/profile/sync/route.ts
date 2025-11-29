@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabase } from "../../../../lib/supabaseClient";
-import { verifyTelegramInitData } from "../../../../lib/verifyTelegram";
+import { supabase } from "@/lib/supabaseClient";
+import { verifyTelegramInitData } from "@/lib/verifyTelegram";
 
 export async function POST(req: Request) {
   try {
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json(
-      { error: "SERVER_ERROR", details: String(e.message ?? e) },
+      { error: "SERVER_ERROR", details: String(e?.message ?? e) },
       { status: 500 }
     );
   }
