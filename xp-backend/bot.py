@@ -14,9 +14,29 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from dotenv import load_dotenv
 
+# Подтягиваем .env (локально), но переменные Railway будут главнее
 load_dotenv()
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# ---------------------------------------------------------------------
+# Загрузка и валидация токена
+# ---------------------------------------------------------------------
+BOT_TOKEN_RAW = os.getenv("TELEGRAM_BOT_TOKEN")
+
+print("DEBUG TELEGRAM_BOT_TOKEN RAW:", repr(BOT_TOKEN_RAW))
+
+if not BOT_TOKEN_RAW:
+    raise RuntimeError(
+        "TELEGRAM_BOT_TOKEN не задан. "
+        "Проверь Variables в Railway или .env локально."
+    )
+
+# Чистим лишние пробелы и кавычки вокруг
+BOT_TOKEN = BOT_TOKEN_RAW.strip().strip('"').strip("'")
+
+if " " in BOT_TOKEN:
+    raise RuntimeError(
+        f"TELEGRAM_BOT_TOKEN выглядит некорректно (есть пробелы внутри): {repr(BOT_TOKEN_RAW)}"
+    )
 
 # рабочий прод-URL мини-апки
 MINIAPP_URL = "https://lifeos-webapp.vercel.app"
@@ -294,7 +314,9 @@ async def submit_task(message: types.Message):
 
     if not api_resp or api_resp.get("error"):
         err = api_resp.get("message") or api_resp.get("error") or "unknown"
-        return await message.answer(f"❌ Не удалось отправить выполнение.\nОшибка: {err}")
+        return await message.answer(
+            f"❌ Не удалось отправить выполнение.\nОшибка: {err}"
+        )
 
     status = api_resp.get("status") or "pending"
 
