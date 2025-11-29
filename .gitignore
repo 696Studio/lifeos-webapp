@@ -8,8 +8,8 @@
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
-<<<<<<< HEAD
 !.yarn/versions
+!.yarn/sdks
 
 # testing
 /coverage
@@ -40,14 +40,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-=======
-!.yarn/sdks
-!.yarn/versions
 
-# Vite logs files
+# Vite logs (если вдруг есть)
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
->>>>>>> e9616fc37d54a64c1e863768874205c07eba0c7d
+
 # LifeOS XP backend (Python)
 xp-backend/venv/
 xp-backend/__pycache__/
