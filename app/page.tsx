@@ -31,7 +31,10 @@ export default function HomePage() {
   const lastLevelUpAt = useXpStore((s) => s.lastLevelUpAt);
   const [flash, setFlash] = useState(false);
 
-  // статус синхронизации профиля (для отладки)
+  // статусов два: загрузка профиля + синк
+  const [loadStatus, setLoadStatus] = useState<
+    "idle" | "pending" | "ok" | "error"
+  >("idle");
   const [syncStatus, setSyncStatus] = useState<
     "idle" | "pending" | "ok" | "error"
   >("idle");
@@ -42,6 +45,9 @@ export default function HomePage() {
 
   // 🔹 Данные пользователя Telegram (аватар + ник)
   const [tgUser, setTgUser] = useState<TgUser | null>(null);
+
+  // флаг: профиль уже загружен из Supabase (через GET)
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
     if (!lastLevelUpAt) return;
@@ -81,13 +87,68 @@ export default function HomePage() {
     [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
     "Telegram user";
 
-  // 🔐 Синхронизация профиля в Supabase по Telegram userId + гидрация стора
-  // + отправляем telegramUsername в бэкенд
+  // 🟦 Шаг 1: грузим профиль из Supabase через GET /api/xp/profile
+  useEffect(() => {
+    if (!isTelegram) return;
+    if (!userId) return;
+    if (profileLoaded) return; // уже загрузили
+
+    const loadProfile = async () => {
+      try:
+        setLoadStatus("pending");
+
+        const res = await fetch(`/api/xp/profile?userId=${userId}`);
+        const data: any = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          console.error("XP profile load failed:", res.status, data);
+          setLoadStatus("error");
+          setProfileLoaded(true); // чтобы не зациклиться
+          return;
+        }
+
+        setLoadStatus("ok");
+
+        const profile = data?.profile;
+        const statsFromServer =
+          profile?.stats ??
+          data?.stats ??
+          null;
+
+        const tasksFromServer =
+          profile?.tasks ??
+          data?.tasks ??
+          null;
+
+        if (statsFromServer && typeof statsFromServer.totalXp === "number") {
+          hydrateFromServer({
+            totalXp: statsFromServer.totalXp,
+            level: statsFromServer.level,
+            currentXp: statsFromServer.currentXp,
+            nextLevelXp: statsFromServer.nextLevelXp,
+            tasks: tasksFromServer ?? undefined,
+          });
+        }
+
+        setProfileLoaded(true);
+      } catch (err) {
+        console.error("Failed to load XP profile", err);
+        setLoadStatus("error");
+        setProfileLoaded(true);
+      }
+    };
+
+    loadProfile();
+  }, [isTelegram, userId, hydrateFromServer, profileLoaded]);
+
+  // 🟩 Шаг 2: синхронизируем профиль (и username) через POST /api/xp/profile/sync
   useEffect(() => {
     // если не в Telegram — не дёргаем API
     if (!isTelegram) return;
     // ждём пока приедет userId и initDataRaw
     if (!userId || !initDataRaw) return;
+    // ждём пока профиль будет хотя бы один раз загружен из Supabase
+    if (!profileLoaded) return;
     // базовая защита от пустых статов
     if (totalXP == null || level == null) return;
 
@@ -128,7 +189,7 @@ export default function HomePage() {
 
         setSyncStatus("ok");
 
-        // 🧠 Если бэк вернул stats/профиль — гидрируем стор, чтобы XP не сбрасывался
+        // 🧠 Если бэк вернул stats/профиль — ещё раз гидрируем стор (на случай расхождений)
         if (data) {
           const statsFromServer =
             data.stats ??
@@ -168,6 +229,7 @@ export default function HomePage() {
     nextLevelXP,
     hydrateFromServer,
     tgUser,
+    profileLoaded,
   ]);
 
   return (
@@ -372,6 +434,7 @@ export default function HomePage() {
           <div>DEBUG:</div>
           <div>isTelegram: {String(isTelegram)}</div>
           <div>userId: {userId ?? "null"}</div>
+          <div>loadStatus: {loadStatus}</div>
           <div>syncStatus: {syncStatus}</div>
         </div>
       </Card>
