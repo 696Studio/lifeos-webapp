@@ -26,6 +26,13 @@ export async function POST(req: Request) {
     const deadlineAtRaw = body?.deadlineAt ?? null;
     const createdByRaw = body?.createdBy ?? null;
 
+    // ✅ категория: либо то, что придёт, либо general
+    const categoryRaw = body?.category;
+    const category =
+      categoryRaw != null && String(categoryRaw).trim() !== ""
+        ? String(categoryRaw).trim()
+        : "general";
+
     if (!title) {
       return NextResponse.json(
         { error: "INVALID_BODY", message: "title is required" },
@@ -77,6 +84,7 @@ export async function POST(req: Request) {
           deadline_at: deadlineAt,
           created_by: createdBy,
           is_active: true,
+          category, // 👈 вот это ключевое
         },
       ])
       .select()
@@ -113,6 +121,7 @@ export async function POST(req: Request) {
       createdAt: data.created_at,
       createdBy: data.created_by,
       isActive: data.is_active,
+      category: data.category,
     };
 
     return NextResponse.json({
