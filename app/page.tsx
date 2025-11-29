@@ -8,7 +8,7 @@ import { useTelegram } from "../hooks/useTelegram";
 
 export default function HomePage() {
   const router = useRouter();
-  const { userId, initDataRaw } = useTelegram();
+  const { userId, initDataRaw, isTelegram } = useTelegram();
 
   // данные из стора
   const level = useXpStore((s) => s.getLevel());
@@ -34,7 +34,12 @@ export default function HomePage() {
 
   // 🔐 Синхронизация профиля в Supabase по Telegram userId
   useEffect(() => {
-    if (!userId) return; // Ждём пока Telegram даст userId
+    // если не Телеграм — ничего не делаем
+    if (!isTelegram) return;
+    // ждём пока приедет userId и initDataRaw
+    if (!userId || !initDataRaw) return;
+    // защищаемся от пустых статов
+    if (totalXP == null || level == null) return;
 
     const syncProfile = async () => {
       try {
@@ -43,7 +48,7 @@ export default function HomePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId,
-            initData: initDataRaw ?? "",
+            initData: initDataRaw,
             stats: {
               totalXp: totalXP,
               level,
@@ -58,7 +63,7 @@ export default function HomePage() {
     };
 
     syncProfile();
-  }, [userId, initDataRaw, totalXP, level, currentXP, nextLevelXP]);
+  }, [isTelegram, userId, initDataRaw, totalXP, level, currentXP, nextLevelXP]);
 
   return (
     <main
