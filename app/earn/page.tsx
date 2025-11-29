@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Card from "../Card";
 import { useXpStore } from "../../store/xpStore";
-import { useTelegram } from "../hooks/useTelegram";
+import { useTelegram } from "../../hooks/useTelegram";
 
 type RemoteTask = {
   id: string;
@@ -21,22 +21,22 @@ type SubmitStatus = "idle" | "pending" | "submitted" | "already" | "error";
 export default function EarnPage() {
   const { userId, isTelegram } = useTelegram();
 
-  // XP-статистика из стора (пока ещё локальная, потом подружим с Supabase-профилем)
+  // XP-статистика из стора (пока ещё локальная)
   const level = useXpStore((s) => s.getLevel());
   const progressPercent = useXpStore((s) => s.getProgressPercent());
   const stats = useXpStore((s) => s.profile.stats);
   const currentXP = stats.currentXp;
   const nextLevelXP = stats.nextLevelXp;
 
-  // Локальные задачи, которые приходят с бэка
+  // Локальные задачи
   const [tasks, setTasks] = useState<RemoteTask[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Статусы отправки выполнения по задачам
+  // Статусы отправки выполнения
   const [submitStatus, setSubmitStatus] = useState<Record<string, SubmitStatus>>({});
 
-  // 🔄 Подгружаем задачи из бэка
+  // 🔄 Загружаем задачи из API
   useEffect(() => {
     const loadTasks = async () => {
       try {
@@ -50,7 +50,7 @@ export default function EarnPage() {
         });
 
         if (!res.ok) {
-          console.error("Failed to load tasks from API", res.status);
+          console.error("Failed to load tasks", res.status);
           setLoadError("Не удалось загрузить задания");
           return;
         }
@@ -70,7 +70,7 @@ export default function EarnPage() {
 
         setTasks(tasksFromApi);
       } catch (e) {
-        console.error("Failed to load tasks from API", e);
+        console.error("Failed to load tasks", e);
         setLoadError("Ошибка при загрузке заданий");
       } finally {
         setIsLoading(false);
@@ -97,8 +97,7 @@ export default function EarnPage() {
     }
 
     const currentStatus = submitStatus[taskId] ?? "idle";
-    if (currentStatus === "pending" || currentStatus === "submitted" || currentStatus === "already") {
-      // уже отправлена или в процессе — повторно не жмём
+    if (["pending", "submitted", "already"].includes(currentStatus)) {
       return;
     }
 
@@ -133,7 +132,7 @@ export default function EarnPage() {
     }
   };
 
-  // Разбивка по категориям
+  // Категории
   const inviteTasks = tasks.filter((t) => t.category === "invite");
   const streamTasks = tasks.filter((t) => t.category === "stream");
   const helpTasks = tasks.filter((t) => t.category === "help");
@@ -147,7 +146,11 @@ export default function EarnPage() {
   const renderTask = (task: RemoteTask) => {
     const status = submitStatus[task.id] ?? "idle";
 
-    const isDisabled = !task.isActive || status === "pending" || status === "submitted" || status === "already";
+    const isDisabled =
+      !task.isActive ||
+      status === "pending" ||
+      status === "submitted" ||
+      status === "already";
 
     let label = "Отправить на проверку";
     if (!task.isActive) label = "Недоступно";
@@ -349,46 +352,29 @@ export default function EarnPage() {
               color: "#7b8a90",
             }}
           >
-            После одобрения выполненных задач админом твой прогресс обновится.
+            Прогресс обновится после того, как админ проверит твои заявки.
           </p>
         </section>
 
         {isLoading && (
-          <p
-            style={{
-              fontSize: "13px",
-              color: "#9ca3af",
-              marginBottom: "8px",
-            }}
-          >
+          <p style={{ fontSize: "13px", color: "#9ca3af", marginBottom: "8px" }}>
             Загружаем задания…
           </p>
         )}
 
         {loadError && (
-          <p
-            style={{
-              fontSize: "13px",
-              color: "#f97373",
-              marginBottom: "8px",
-            }}
-          >
+          <p style={{ fontSize: "13px", color: "#f97373", marginBottom: "8px" }}>
             {loadError}
           </p>
         )}
 
         {!isLoading && !loadError && tasks.length === 0 && (
-          <p
-            style={{
-              fontSize: "13px",
-              color: "#9ca3af",
-            }}
-          >
-            Пока нет доступных заданий. Возвращайся чуть позже.
+          <p style={{ fontSize: "13px", color: "#9ca3af" }}>
+            Пока нет доступных заданий.
           </p>
         )}
 
-        {/* Секции задач по категориям */}
+        {/* Категории */}
         {inviteTasks.length > 0 && (
           <section style={{ marginBottom: "20px" }}>
             <h3
