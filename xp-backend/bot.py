@@ -311,16 +311,156 @@ async def submit_task(message: types.Message):
 
 
 # ---------------------------------------------------------------------
-# ADMIN: /pending — список заявок (пока заглушка)
+# ADMIN: /pending — список заявок на проверку
 # ---------------------------------------------------------------------
 @dp.message(Command("pending"))
 async def pending_list(message: types.Message):
     if not is_admin(message.from_user.id):
         return await message.answer("⛔ Доступ запрещён.")
 
-    await message.answer("⏳ Тут будут заявки пользователей на проверку (в разработке).")
-    # позже добавим работу с xp_task_completions
-    return
+    await message.answer("⏳ Загружаю заявки на проверку...")
+
+    payload = {"limit": 30}
+
+    try:
+        api_resp = await call_api("tasks/pending", payload)
+    except Exception as e:
+        print("API ERROR /tasks/pending:", e)
+        return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
+
+    if not api_resp or api_resp.get("error"):
+        err = api_resp.get("message") or api_resp.get("error") or "unknown"
+        return await message.answer(
+            f"❌ Не удалось загрузить заявки.\nОшибка: {err}"
+        )
+
+    items = api_resp.get("items") or []
+
+    if not items:
+        return await message.answer("✅ Нет заявок в статусе pending.")
+
+    lines: list[str] = ["🟡 *Заявки, ожидающие проверки:*", ""]
+    for idx, item in enumerate(items[:20], start=1):
+        completion_id = item.get("id")
+        task_code = item.get("taskCode") or "NO_CODE"
+        task_title = item.get("taskTitle") or "Без названия"
+        user_id = item.get("telegramUserId")
+        reward = item.get("rewardXp") or 0
+
+        line = (
+            f"{idx}. `{task_code}` — *{task_title}*\n"
+            f"   Пользователь: `{user_id}`\n"
+            f"   Награда: +{reward} XP\n"
+            f"   ID заявки: `{completion_id}`\n"
+            f"   /approve {completion_id}\n"
+            f"   /reject {completion_id}\n"
+        )
+        lines.append(line)
+
+    await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------
+# ADMIN: /approve <completionId> — принять выполнение и начислить XP
+# ---------------------------------------------------------------------
+@dp.message(Command("approve"))
+async def approve_completion(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return await message.answer("⛔ Доступ запрещён.")
+
+    args = message.text.split()
+    if len(args) < 2:
+        return await message.answer(
+            "❗ Укажи ID заявки.\n\n"
+            "Пример:\n"
+            "`/approve 123e4567-e89b-12d3-a456-426614174000`",
+            parse_mode="Markdown",
+        )
+
+    completion_id = args[1].strip()
+
+    await message.answer(
+        f"✅ Подтверждаю заявку `{completion_id}` и начисляю XP...",
+        parse_mode="Markdown",
+    )
+
+    payload = {
+        "completionId": completion_id,
+        "adminId": message.from_user.id,
+    }
+
+    try:
+        api_resp = await call_api("tasks/approve", payload)
+    except Exception as e:
+        print("API ERROR /tasks/approve:", e)
+        return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
+
+    if not api_resp or api_resp.get("error"):
+        err = api_resp.get("message") or api_resp.get("error") or "unknown"
+        return await message.answer(
+            f"❌ Не удалось подтвердить заявку.\nОшибка: {err}"
+        )
+
+    reward_xp = api_resp.get("rewardXp") or 0
+    profile = api_resp.get("profile") or {}
+    stats = profile.get("stats") or {}
+    level = stats.get("level")
+    total_xp = stats.get("totalXp")
+
+    await message.answer(
+        "🎉 Заявка одобрена.\n"
+        f"Начислено: +{reward_xp} XP\n"
+        f"Новый уровень: {level}\n"
+        f"Всего XP: {total_xp}",
+        parse_mode="Markdown",
+    )
+
+
+# ---------------------------------------------------------------------
+# ADMIN: /reject <completionId> — отклонить выполнение
+# ---------------------------------------------------------------------
+@dp.message(Command("reject"))
+async def reject_completion(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return await message.answer("⛔ Доступ запрещён.")
+
+    args = message.text.split()
+    if len(args) < 2:
+        return await message.answer(
+            "❗ Укажи ID заявки.\n\n"
+            "Пример:\n"
+            "`/reject 123e4567-e89b-12d3-a456-426614174000`",
+            parse_mode="Markdown",
+        )
+
+    completion_id = args[1].strip()
+
+    await message.answer(
+        f"🚫 Отклоняю заявку `{completion_id}`...",
+        parse_mode="Markdown",
+    )
+
+    payload = {
+        "completionId": completion_id,
+        "adminId": message.from_user.id,
+    }
+
+    try:
+        api_resp = await call_api("tasks/reject", payload)
+    except Exception as e:
+        print("API ERROR /tasks/reject:", e)
+        return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
+
+    if not api_resp or api_resp.get("error"):
+        err = api_resp.get("message") or api_resp.get("error") or "unknown"
+        return await message.answer(
+            f"❌ Не удалось отклонить заявку.\nОшибка: {err}"
+        )
+
+    await message.answer(
+        "✅ Заявка отклонена.",
+        parse_mode="Markdown",
+    )
 
 
 # ---------------------------------------------------------------------
