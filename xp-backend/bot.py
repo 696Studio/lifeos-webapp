@@ -1,21 +1,55 @@
 import asyncio
 import os
+import aiohttp
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from aiogram.filters import CommandStart, Command
+from aiogram.types import (
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    WebAppInfo,
+)
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.context import FSMContext
 from dotenv import load_dotenv
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# рабочий прод-URL
+# рабочий прод-URL мини-апки
 MINIAPP_URL = "https://lifeos-webapp.vercel.app"
+
+# URL Next.js API (тот же домен)
+API_BASE = f"{MINIAPP_URL}/api/xp"
+
+# список админов (если пустой — все считаются админами, для удобства на этапе разработки)
+ADMINS: set[int] = set()
+
+
+def is_admin(user_id: int) -> bool:
+    # если список пуст — считаем всех админами
+    return (not ADMINS) or (user_id in ADMINS)
+
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
+
+# ---------------------------------------------------------------------
+# FSM состояния для создания задачи
+# ---------------------------------------------------------------------
+class NewTaskStates(StatesGroup):
+    waiting_for_title = State()
+    waiting_for_description = State()
+    waiting_for_reward = State()
+    waiting_for_deadline = State()
+
+
+# ---------------------------------------------------------------------
+# /start — открыть мини-апку
+# ---------------------------------------------------------------------
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     keyboard = ReplyKeyboardMarkup(
@@ -37,9 +71,284 @@ async def cmd_start(message: types.Message):
     )
 
 
+# ---------------------------------------------------------------------
+# ADMIN: /newtask — запуск диалога создания задачи
+# ---------------------------------------------------------------------
+@dp.message(Command("newtask"))
+async def new_task(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return await message.answer("⛔ У вас нет прав для создания задач.")
+
+    await state.clear()
+    await state.set_state(NewTaskStates.waiting_for_title)
+
+    await message.answer(
+        "📝 Создание новой задачи.\n\n"
+        "Отправь *название задачи*.",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(NewTaskStates.waiting_for_title)
+async def new_task_title(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return await message.answer("⛔ Доступ запрещён.")
+
+    title = message.text.strip()
+    if not title:
+        return await message.answer("❗ Название не может быть пустым. Отправь ещё раз.")
+
+    await state.update_data(title=title)
+    await state.set_state(NewTaskStates.waiting_for_description)
+
+    await message.answer(
+        "✏️ Ок.\nТеперь отправь *описание задачи*.\n\n"
+        "_Можно коротко, можно подробно._",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(NewTaskStates.waiting_for_description)
+async def new_task_description(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return await message.answer("⛔ Доступ запрещён.")
+
+    description = message.text.strip()
+    await state.update_data(description=description)
+    await state.set_state(NewTaskStates.waiting_for_reward)
+
+    await message.answer(
+        "💰 Сколько XP дать за выполнение этой задачи?\n\n"
+        "Отправь *целое число* (например: `50`).",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(NewTaskStates.waiting_for_reward)
+async def new_task_reward(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return await message.answer("⛔ Доступ запрещён.")
+
+    text = message.text.strip().replace(" ", "")
+    if not text.isdigit():
+        return await message.answer(
+            "❗ Нужно отправить *целое число XP*. Попробуй ещё раз.",
+            parse_mode="Markdown",
+        )
+
+    reward_xp = int(text)
+    if reward_xp <= 0:
+        return await message.answer("❗ Награда должна быть больше 0. Попробуй ещё раз.")
+
+    await state.update_data(reward_xp=reward_xp)
+    await state.set_state(NewTaskStates.waiting_for_deadline)
+
+    await message.answer(
+        "⏰ Теперь дедлайн.\n\n"
+        "Отправь дату в формате `YYYY-MM-DD` (например: `2025-12-31`)\n"
+        "или напиши `нет`, если дедлайн не нужен.",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(NewTaskStates.waiting_for_deadline)
+async def new_task_deadline(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return await message.answer("⛔ Доступ запрещён.")
+
+    text = message.text.strip().lower()
+    deadline_iso = None
+
+    if text in ("нет", "no", "-", "none", "0"):
+        deadline_iso = None
+    else:
+        try:
+            dt = datetime.strptime(text, "%Y-%m-%d")
+            deadline_iso = dt.strftime("%Y-%m-%dT00:00:00Z")
+        except ValueError:
+            return await message.answer(
+                "❗ Неверный формат даты.\n"
+                "Нужно вот так: `2025-12-31` или напиши `нет`.",
+                parse_mode="Markdown",
+            )
+
+    data = await state.get_data()
+    title = data.get("title")
+    description = data.get("description")
+    reward_xp = data.get("reward_xp")
+
+    await state.clear()
+
+    await message.answer(
+        "✅ Сводка задачи:\n\n"
+        f"*Название:* {title}\n"
+        f"*Описание:* {description or '—'}\n"
+        f"*Награда:* {reward_xp} XP\n"
+        f"*Дедлайн:* {text if deadline_iso else 'нет'}\n\n"
+        "💾 Сохраняю задачу...",
+        parse_mode="Markdown",
+    )
+
+    payload = {
+        "title": title,
+        "description": description,
+        "rewardXp": reward_xp,
+        "deadlineAt": deadline_iso,
+        "createdBy": message.from_user.id,
+    }
+
+    try:
+        api_resp = await call_api("tasks/create", payload)
+    except Exception as e:
+        print("API ERROR /tasks/create:", e)
+        return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
+
+    if not api_resp or api_resp.get("error"):
+        err = api_resp.get("message") or api_resp.get("error") or "unknown"
+        return await message.answer(f"❌ Не удалось сохранить задачу.\nОшибка: {err}")
+
+    task = api_resp.get("task") or {}
+    code = task.get("code") or "UNKNOWN"
+
+    await message.answer(
+        "🔥 Задача создана!\n\n"
+        f"*Код задачи:* `{code}`\n"
+        f"*Награда:* {reward_xp} XP\n\n"
+        "Пользователи смогут выполнить её через /tasks и /done.",
+        parse_mode="Markdown",
+    )
+
+
+# ---------------------------------------------------------------------
+# USER: /tasks — список задач
+# ---------------------------------------------------------------------
+@dp.message(Command("tasks"))
+async def tasks_list(message: types.Message):
+    await message.answer("⏳ Загружаю список задач...")
+
+    try:
+        api_resp = await call_api("tasks/list", {})
+    except Exception as e:
+        print("API ERROR /tasks/list:", e)
+        return await message.answer("❌ Не удалось загрузить задачи.\nОшибка: INTERNAL")
+
+    if not api_resp or api_resp.get("error"):
+        err = api_resp.get("message") or api_resp.get("error") or "unknown"
+        return await message.answer(f"❌ Не удалось загрузить задачи.\nОшибка: {err}")
+
+    tasks = api_resp.get("tasks") or []
+
+    if not tasks:
+        return await message.answer("Пока нет активных задач. Загляни позже ✨")
+
+    lines = ["📃 *Доступные задачи:*", ""]
+    for t in tasks[:15]:
+        code = t.get("code")
+        title = t.get("title")
+        reward = t.get("rewardXp")
+        line = f"• `{code}` — *{title}* (+{reward} XP)"
+        lines.append(line)
+
+    lines.append("")
+    lines.append("Чтобы отправить выполнение, используй:\n`/done КОД_ЗАДАЧИ`")
+
+    await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------
+# USER: /done <task_code> — отправить выполнение задачи
+# ---------------------------------------------------------------------
+@dp.message(Command("done"))
+async def submit_task(message: types.Message):
+    args = message.text.split()
+    if len(args) < 2:
+        return await message.answer(
+            "❗ Укажи код задачи.\n\n"
+            "Пример:\n"
+            "`/done DAILY_1234`",
+            parse_mode="Markdown",
+        )
+
+    task_code = args[1].strip().upper()
+    user_id = message.from_user.id
+
+    await message.answer(
+        f"📩 Отправляю заявку на выполнение задачи `{task_code}`...",
+        parse_mode="Markdown",
+    )
+
+    payload = {
+        "userId": user_id,
+        "taskCode": task_code,
+    }
+
+    try:
+        api_resp = await call_api("tasks/submit", payload)
+    except Exception as e:
+        print("API ERROR /tasks/submit:", e)
+        return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
+
+    if not api_resp or api_resp.get("error"):
+        err = api_resp.get("message") or api_resp.get("error") or "unknown"
+        return await message.answer(f"❌ Не удалось отправить выполнение.\nОшибка: {err}")
+
+    status = api_resp.get("status") or "pending"
+
+    if status == "already_submitted":
+        return await message.answer(
+            "⚠ Ты уже отправлял выполнение этой задачи.\n"
+            "Жди решения админа.",
+        )
+
+    await message.answer(
+        "✅ Заявка на выполнение задачи отправлена.\n"
+        "После проверки админом XP будет начислен.",
+    )
+
+
+# ---------------------------------------------------------------------
+# ADMIN: /pending — список заявок (пока заглушка)
+# ---------------------------------------------------------------------
+@dp.message(Command("pending"))
+async def pending_list(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return await message.answer("⛔ Доступ запрещён.")
+
+    await message.answer("⏳ Тут будут заявки пользователей на проверку (в разработке).")
+    # позже добавим работу с xp_task_completions
+    return
+
+
+# ---------------------------------------------------------------------
+# Функция обращения к Next.js API
+# ---------------------------------------------------------------------
+async def call_api(path: str, payload: dict):
+    url = f"{API_BASE}/{path}"
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload) as resp:
+            try:
+                data = await resp.json()
+            except Exception:
+                text = await resp.text()
+                print("API BAD RESPONSE TEXT:", text)
+                return {"error": "INVALID_RESPONSE", "raw": text}
+
+            if resp.status >= 400:
+                print("API ERROR STATUS:", resp.status, data)
+            return data
+
+
+# ---------------------------------------------------------------------
+# START BOT
+# ---------------------------------------------------------------------
 async def main():
-    print("🤖 LifeOS Bot started")
+    print("🤖 LifeOS Admin Bot started")
     print(f"➡ MINIAPP_URL = {MINIAPP_URL}")
+    print(f"➡ API_BASE = {API_BASE}")
     await dp.start_polling(bot)
 
 
