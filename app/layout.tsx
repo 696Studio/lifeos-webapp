@@ -4,6 +4,7 @@ import "./globals.css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Script from "next/script";
+import XpNotifier from "../components/XpNotifier"; // ← добавлено
 
 export default function RootLayout({
   children,
@@ -32,11 +33,14 @@ export default function RootLayout({
             '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
         }}
       >
-        {/* 🔌 Подключаем Telegram WebApp скрипт */}
+        {/* Подключение TG WebApp */}
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
+
+        {/* 🔔 XpNotifier — глобальная всплывашка */}
+        <XpNotifier />
 
         <div
           style={{
@@ -46,11 +50,11 @@ export default function RootLayout({
             minHeight: "100vh",
             boxSizing: "border-box",
             margin: "0 auto",
-            paddingTop: "90px", // пространство под меню сверху
+            paddingTop: "90px",
             paddingBottom: "40px",
           }}
         >
-          {/* Верхнее меню */}
+          {/* Навигация */}
           <nav
             style={{
               position: "fixed",
@@ -107,7 +111,7 @@ export default function RootLayout({
             </div>
           </nav>
 
-          {/* Контент страниц */}
+          {/* Контент */}
           <div
             style={{
               display: "flex",

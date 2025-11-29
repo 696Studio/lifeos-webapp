@@ -1,77 +1,67 @@
-// app/api/xp/events/route.ts
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-export async function POST(req: Request) {
+export async function GET(req: Request) {
   try {
-    const body = await req.json();
-    const event = body?.event;
+    const { searchParams } = new URL(req.url);
+    const userIdRaw = searchParams.get("userId");
 
-    console.log("📩 EVENT RECEIVED:", event);
-
-    if (!event || event.userId == null || !event.type) {
+    if (!userIdRaw) {
       return NextResponse.json(
-        {
-          error: "BAD_REQUEST",
-          message: "event.userId and event.type required",
-        },
+        { error: "INVALID_QUERY", message: "userId is required" },
         { status: 400 }
       );
     }
 
-    const numericUserId = Number(event.userId);
-    if (!Number.isFinite(numericUserId)) {
+    const userId = Number(userIdRaw);
+
+    if (!Number.isFinite(userId)) {
       return NextResponse.json(
-        {
-          error: "INVALID_USER_ID",
-          message: "event.userId must be a number (Telegram user id)",
-        },
+        { error: "INVALID_QUERY", message: "userId must be a number" },
         { status: 400 }
       );
     }
 
-    // Если из стора прилетает createdAt (timestamp), конвертим в ISO
-    let createdAt: string | undefined = undefined;
-    if (event.createdAt) {
-      const d = new Date(event.createdAt);
-      if (!isNaN(d.getTime())) {
-        createdAt = d.toISOString();
-      }
-    }
-
-    const payload: any = {
-      user_id: numericUserId, // тут лежит реальный Telegram ID
-      type: event.type,
-      amount: event.amount ?? null,
-      source: event.source ?? null,
-      task_id: event.taskId ?? null,
-      level_from: event.levelFrom ?? null,
-      level_to: event.levelTo ?? null,
-    };
-
-    if (createdAt) {
-      payload.created_at = createdAt;
-    }
-
-    const { data, error } = await supabase
+    // 1) Забираем события XP
+    const { data: events, error } = await supabase
       .from("xp_events")
-      .insert([payload])
-      .select()
-      .single();
+      .select(
+        `
+        id,
+        created_at,
+        type,
+        amount,
+        source,
+        task_id,
+        level_from,
+        level_to
+      `
+      )
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("❌ Supabase insert error:", error);
+      console.error("[Supabase] xp_events fetch error:", error);
       return NextResponse.json(
         { error: "DB_ERROR", message: error.message },
         { status: 500 }
       );
     }
 
-    console.log("✅ EVENT SAVED:", data?.id ?? data);
+    const normalized = (events ?? []).map((ev) => ({
+      id: ev.id,
+      createdAt: ev.created_at,
+      type: ev.type,
+      amount: ev.amount,
+      source: ev.source,
+      taskId: ev.task_id,
+      levelFrom: ev.level_from,
+      levelTo: ev.level_to,
+    }));
 
-    return NextResponse.json({ ok: true, eventId: data?.id ?? null });
+    return NextResponse.json({ events: normalized });
   } catch (e: any) {
-    console.error("❌ API ERROR", e);
+    console.error("[XP] /api/xp/events error:", e);
     return NextResponse.json(
       {
         error: "SERVER_ERROR",

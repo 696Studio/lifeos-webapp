@@ -18,7 +18,6 @@ export default function HomePage() {
   const router = useRouter();
   const { userId, initDataRaw, isTelegram } = useTelegram();
 
-  // данные из стора
   const level = useXpStore((s) => s.getLevel());
   const progressPercent = useXpStore((s) => s.getProgressPercent());
   const stats = useXpStore((s) => s.profile.stats);
@@ -27,11 +26,9 @@ export default function HomePage() {
   const nextLevelXP = stats.nextLevelXp;
   const totalXP = stats.totalXp;
 
-  // триггер Level Up
   const lastLevelUpAt = useXpStore((s) => s.lastLevelUpAt);
   const [flash, setFlash] = useState(false);
 
-  // статусы: загрузка профиля + синк
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "pending" | "ok" | "error"
   >("idle");
@@ -39,15 +36,36 @@ export default function HomePage() {
     "idle" | "pending" | "ok" | "error"
   >("idle");
 
-  // из стора: userId + гидрация профиля
   const setStoreUserId = useXpStore((s) => s.setUserId);
   const hydrateFromServer = useXpStore((s) => s.hydrateFromServer);
 
-  // 🔹 Данные пользователя Telegram (аватар + ник)
   const [tgUser, setTgUser] = useState<TgUser | null>(null);
-
-  // флаг: профиль уже загружен из Supabase (через GET)
   const [profileLoaded, setProfileLoaded] = useState(false);
+
+  // --------------------------------------------------------
+  // 🔥 НОВОЕ: Анимированное значение прогресса XP
+  // --------------------------------------------------------
+  const [animatedProgress, setAnimatedProgress] = useState(progressPercent);
+
+  useEffect(() => {
+    let raf: number;
+    const speed = 0.08; // скорость "догоняния" — мягкая
+
+    const animate = () => {
+      setAnimatedProgress((prev) => {
+        const diff = progressPercent - prev;
+        if (Math.abs(diff) < 0.3) return progressPercent; // почти дошли — фиксируем
+
+        return prev + diff * speed;
+      });
+
+      raf = requestAnimationFrame(animate);
+    };
+
+    animate();
+    return () => cancelAnimationFrame(raf);
+  }, [progressPercent]);
+  // --------------------------------------------------------
 
   useEffect(() => {
     if (!lastLevelUpAt) return;
@@ -58,14 +76,12 @@ export default function HomePage() {
     return () => clearTimeout(t);
   }, [lastLevelUpAt]);
 
-  // 🔗 Кладём Telegram userId в xpStore, чтобы события шли с реальным ID
   useEffect(() => {
     if (!isTelegram) return;
     if (!userId) return;
     setStoreUserId(String(userId));
   }, [isTelegram, userId, setStoreUserId]);
 
-  // 🔹 Читаем данные юзера из Telegram WebApp (для аватарки и ника)
   useEffect(() => {
     if (!isTelegram) return;
     if (typeof window === "undefined") return;
@@ -87,11 +103,10 @@ export default function HomePage() {
     [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
     "Telegram user";
 
-  // 🟦 Шаг 1: грузим профиль из Supabase через GET /api/xp/profile
   useEffect(() => {
     if (!isTelegram) return;
     if (!userId) return;
-    if (profileLoaded) return; // уже загрузили
+    if (profileLoaded) return;
 
     const loadProfile = async () => {
       try {
@@ -103,7 +118,7 @@ export default function HomePage() {
         if (!res.ok) {
           console.error("XP profile load failed:", res.status, data);
           setLoadStatus("error");
-          setProfileLoaded(true); // чтобы не зациклиться
+          setProfileLoaded(true);
           return;
         }
 
@@ -141,15 +156,10 @@ export default function HomePage() {
     loadProfile();
   }, [isTelegram, userId, hydrateFromServer, profileLoaded]);
 
-  // 🟩 Шаг 2: синхронизируем профиль (и username) через POST /api/xp/profile/sync
   useEffect(() => {
-    // если не в Telegram — не дёргаем API
     if (!isTelegram) return;
-    // ждём пока приедет userId и initDataRaw
     if (!userId || !initDataRaw) return;
-    // ждём пока профиль будет хотя бы один раз загружен из Supabase
     if (!profileLoaded) return;
-    // базовая защита от пустых статов
     if (totalXP == null || level == null) return;
 
     const telegramUsername = tgUser?.username ?? null;
@@ -177,40 +187,31 @@ export default function HomePage() {
         const data: any = await res.json().catch(() => null);
 
         if (!res.ok) {
-          console.error(
-            "XP profile sync failed:",
-            res.status,
-            res.statusText,
-            data
-          );
+          console.error("XP profile sync failed:", res.status, data);
           setSyncStatus("error");
           return;
         }
 
         setSyncStatus("ok");
 
-        // 🧠 Если бэк вернул stats/профиль — ещё раз гидрируем стор (на случай расхождений)
-        if (data) {
-          const statsFromServer =
-            data.stats ??
-            data.profile?.stats ??
-            data.profileStats ??
-            null;
+        const statsFromServer =
+          data.stats ??
+          data.profile?.stats ??
+          null;
 
-          const tasksFromServer =
-            data.tasks ??
-            data.profile?.tasks ??
-            null;
+        const tasksFromServer =
+          data.tasks ??
+          data.profile?.tasks ??
+          null;
 
-          if (statsFromServer && typeof statsFromServer.totalXp === "number") {
-            hydrateFromServer({
-              totalXp: statsFromServer.totalXp,
-              level: statsFromServer.level,
-              currentXp: statsFromServer.currentXp,
-              nextLevelXp: statsFromServer.nextLevelXp,
-              tasks: tasksFromServer ?? undefined,
-            });
-          }
+        if (statsFromServer && typeof statsFromServer.totalXp === "number") {
+          hydrateFromServer({
+            totalXp: statsFromServer.totalXp,
+            level: statsFromServer.level,
+            currentXp: statsFromServer.currentXp,
+            nextLevelXp: statsFromServer.nextLevelXp,
+            tasks: tasksFromServer ?? undefined,
+          });
         }
       } catch (err) {
         console.error("Failed to sync XP profile", err);
@@ -243,7 +244,6 @@ export default function HomePage() {
       }}
     >
       <Card>
-        {/* 🔹 Блок профиля пользователя Telegram */}
         {isTelegram && tgUser && (
           <div
             style={{
@@ -268,7 +268,6 @@ export default function HomePage() {
               }}
             >
               {tgUser.photo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={tgUser.photo_url}
                   alt={displayName}
@@ -326,7 +325,6 @@ export default function HomePage() {
           Ваш уровень в экосистеме LifeOS.
         </p>
 
-        {/* Уровень + прогресс */}
         <div style={{ marginBottom: "16px" }}>
           <div
             style={{
@@ -357,10 +355,10 @@ export default function HomePage() {
           >
             <div
               style={{
-                width: `${progressPercent}%`,
+                width: `${animatedProgress}%`,  // ← 🔥 ПЛАВНЫЙ ПРОГРЕСС
                 height: "100%",
                 background: "linear-gradient(90deg, #00ffff, #00c6ff)",
-                transition: "width 0.2s ease-out",
+                transition: "width 0.1s linear",
               }}
             />
           </div>
@@ -376,7 +374,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Кнопки */}
         <div
           style={{
             display: "flex",
@@ -409,7 +406,8 @@ export default function HomePage() {
               width: "100%",
               padding: "14px 16px",
               borderRadius: "999px",
-              border: "1px solid rgba(148, 163, 184, 0.4)",
+              border: "1px solid rgba(148, 163, 184, 0.4)"
+,
               background: "rgba(9, 12, 20, 0.95)",
               cursor: "pointer",
               color: "#e5edf5",
@@ -421,7 +419,6 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* 🔍 DEBUG-блок — временно */}
         <div
           style={{
             marginTop: "20px",
