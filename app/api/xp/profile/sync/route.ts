@@ -1,43 +1,29 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { verifyTelegramInitData } from "@/lib/verifyTelegram";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { userId, initData, stats } = body;
+    const { userId, stats } = body;
 
-    if (!userId || !initData || !stats) {
+    if (!userId || !stats) {
       return NextResponse.json(
-        { error: "INVALID_BODY", message: "userId, initData, stats required" },
+        { error: "INVALID_BODY", message: "userId, stats required" },
         { status: 400 }
       );
     }
 
-    // 🔐 Верификация подписи Telegram WebApp
-    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
-    const isValid = verifyTelegramInitData(initData, BOT_TOKEN);
-
-    if (!isValid) {
-      console.error("❌ Telegram signature check failed");
-      return NextResponse.json(
-        { error: "INVALID_SIGNATURE" },
-        { status: 403 }
-      );
-    }
-
-    // 🟩 Если всё ок — обновляем профиль
     const { error } = await supabase
       .from("xp_profiles")
       .upsert(
         {
-          user_id: userId,
+          telegram_user_id: Number(userId),
           total_xp: stats.totalXp,
           level: stats.level,
           current_xp: stats.currentXp,
           next_level_xp: stats.nextLevelXp,
         },
-        { onConflict: "user_id" }
+        { onConflict: "telegram_user_id" }
       );
 
     if (error) {
