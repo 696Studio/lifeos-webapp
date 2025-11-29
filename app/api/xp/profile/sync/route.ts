@@ -13,18 +13,29 @@ export async function POST(req: Request) {
       );
     }
 
-    const { error } = await supabase
+    const numericUserId = Number(userId);
+    if (!Number.isFinite(numericUserId)) {
+      return NextResponse.json(
+        { error: "INVALID_USER_ID", message: "userId must be a number" },
+        { status: 400 }
+      );
+    }
+
+    // upsert профиля по telegram_user_id
+    const { data, error } = await supabase
       .from("xp_profiles")
       .upsert(
         {
-          telegram_user_id: Number(userId),
+          telegram_user_id: numericUserId,
           total_xp: stats.totalXp,
           level: stats.level,
           current_xp: stats.currentXp,
           next_level_xp: stats.nextLevelXp,
         },
         { onConflict: "telegram_user_id" }
-      );
+      )
+      .select()
+      .single();
 
     if (error) {
       console.error("[Supabase] xp_profiles upsert error:", error);
@@ -34,8 +45,33 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({ ok: true });
+    // safety: если по какой-то причине data нет
+    if (!data) {
+      return NextResponse.json(
+        { error: "NO_PROFILE", message: "Profile not found after upsert" },
+        { status: 500 }
+      );
+    }
+
+    // Нормализуем ответ под фронт (hydrateFromServer)
+    const profile = {
+      telegramUserId: data.telegram_user_id,
+      stats: {
+        totalXp: data.total_xp ?? 0,
+        level: data.level ?? 1,
+        currentXp: data.current_xp ?? 0,
+        nextLevelXp: data.next_level_xp ?? 500,
+      },
+      // сюда позже можно будет прилепить задачи из другой таблицы
+      tasks: [] as any[],
+    };
+
+    return NextResponse.json({
+      ok: true,
+      profile,
+    });
   } catch (e: any) {
+    console.error("[XP] profile/sync server error:", e);
     return NextResponse.json(
       { error: "SERVER_ERROR", details: String(e?.message ?? e) },
       { status: 500 }

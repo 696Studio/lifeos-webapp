@@ -6,6 +6,14 @@ import { useXpStore } from "../store/xpStore";
 import { useRouter } from "next/navigation";
 import { useTelegram } from "../hooks/useTelegram";
 
+type TgUser = {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+};
+
 export default function HomePage() {
   const router = useRouter();
   const { userId, initDataRaw, isTelegram } = useTelegram();
@@ -28,6 +36,13 @@ export default function HomePage() {
     "idle" | "pending" | "ok" | "error"
   >("idle");
 
+  // из стора: userId + гидрация профиля
+  const setStoreUserId = useXpStore((s) => s.setUserId);
+  const hydrateFromServer = useXpStore((s) => s.hydrateFromServer);
+
+  // 🔹 Данные пользователя Telegram (аватар + ник)
+  const [tgUser, setTgUser] = useState<TgUser | null>(null);
+
   useEffect(() => {
     if (!lastLevelUpAt) return;
 
@@ -37,7 +52,14 @@ export default function HomePage() {
     return () => clearTimeout(t);
   }, [lastLevelUpAt]);
 
-  // 🔐 Синхронизация профиля в Supabase по Telegram userId
+  // 🔗 Кладём Telegram userId в xpStore, чтобы события шли с реальным ID
+  useEffect(() => {
+    if (!isTelegram) return;
+    if (!userId) return;
+    setStoreUserId(String(userId));
+  }, [isTelegram, userId, setStoreUserId]);
+
+  // 🔐 Синхронизация профиля в Supabase по Telegram userId + гидрация стора
   useEffect(() => {
     // если не в Telegram — не дёргаем API
     if (!isTelegram) return;
@@ -65,8 +87,9 @@ export default function HomePage() {
           }),
         });
 
+        const data: any = await res.json().catch(() => null);
+
         if (!res.ok) {
-          const data = await res.json().catch(() => null);
           console.error(
             "XP profile sync failed:",
             res.status,
@@ -78,6 +101,30 @@ export default function HomePage() {
         }
 
         setSyncStatus("ok");
+
+        // 🧠 Если бэк вернул stats/профиль — гидрируем стор, чтобы XP не сбрасывался
+        if (data) {
+          const statsFromServer =
+            data.stats ??
+            data.profile?.stats ??
+            data.profileStats ??
+            null;
+
+          const tasksFromServer =
+            data.tasks ??
+            data.profile?.tasks ??
+            null;
+
+          if (statsFromServer && typeof statsFromServer.totalXp === "number") {
+            hydrateFromServer({
+              totalXp: statsFromServer.totalXp,
+              level: statsFromServer.level,
+              currentXp: statsFromServer.currentXp,
+              nextLevelXp: statsFromServer.nextLevelXp,
+              tasks: tasksFromServer ?? undefined,
+            });
+          }
+        }
       } catch (err) {
         console.error("Failed to sync XP profile", err);
         setSyncStatus("error");
@@ -85,7 +132,38 @@ export default function HomePage() {
     };
 
     syncProfile();
-  }, [isTelegram, userId, initDataRaw, totalXP, level, currentXP, nextLevelXP]);
+  }, [
+    isTelegram,
+    userId,
+    initDataRaw,
+    totalXP,
+    level,
+    currentXP,
+    nextLevelXP,
+    hydrateFromServer,
+  ]);
+
+  // 🔹 Читаем данные юзера из Telegram WebApp (для аватарки и ника)
+  useEffect(() => {
+    if (!isTelegram) return;
+    if (typeof window === "undefined") return;
+
+    try {
+      const anyWindow = window as any;
+      const tg = anyWindow.Telegram?.WebApp;
+      const user: TgUser | undefined = tg?.initDataUnsafe?.user;
+      if (user) {
+        setTgUser(user);
+      }
+    } catch (e) {
+      console.error("Failed to read Telegram user", e);
+    }
+  }, [isTelegram]);
+
+  const displayName =
+    tgUser?.username ||
+    [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
+    "Telegram user";
 
   return (
     <main
@@ -98,6 +176,75 @@ export default function HomePage() {
       }}
     >
       <Card>
+        {/* 🔹 Блок профиля пользователя Telegram */}
+        {isTelegram && tgUser && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              marginBottom: "20px",
+            }}
+          >
+            <div
+              style={{
+                width: "44px",
+                height: "44px",
+                borderRadius: "999px",
+                overflow: "hidden",
+                background:
+                  "linear-gradient(135deg, rgba(0,229,255,0.15), rgba(0,179,255,0.05))",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "1px solid rgba(148, 163, 184, 0.4)",
+              }}
+            >
+              {tgUser.photo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={tgUser.photo_url}
+                  alt={displayName}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <span
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: 600,
+                    color: "#e5edf5",
+                  }}
+                >
+                  {displayName.charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span
+                style={{
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  color: "#e5edf5",
+                }}
+              >
+                {displayName}
+              </span>
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "rgba(148, 163, 184, 0.9)",
+                }}
+              >
+                Ваш профиль в Telegram
+              </span>
+            </div>
+          </div>
+        )}
+
         <h2 style={{ fontSize: "24px", marginBottom: "8px" }}>
           LifeOS XP System
         </h2>

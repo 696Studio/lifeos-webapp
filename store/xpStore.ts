@@ -25,9 +25,6 @@ type AddXpMeta = {
   taskId?: string;
 };
 
-// ⚠️ Пока жёстко мок: позже сюда подставим реальный Telegram userId
-const DEFAULT_USER_ID = "testuser123";
-
 function makeId() {
   return (
     Math.random().toString(36).substring(2) + Date.now().toString(36)
@@ -86,7 +83,9 @@ function calculateLevelStats(totalXp: number) {
   };
 }
 
-// Формируем стартовый профиль с пересчитанными полями
+// Формируем стартовый профиль с пересчитанными полями (локальный мок)
+// При первой загрузке берём эти значения, потом будем
+// гидрировать профиль данными из Supabase
 const initialProfile: XpProfile = (() => {
   const base: XpProfile = {
     ...xpMockProfile,
@@ -110,6 +109,22 @@ interface XpState {
   // Лента XP-событий (для /feed и аналитики — локальная)
   events: XpEvent[];
 
+  // Текущий Telegram userId (кладём сюда из useTelegram)
+  userId: string | null;
+
+  // Установить / сбросить userId
+  setUserId: (userId: string | null) => void;
+
+  // Гидрация профиля данными с сервера (Supabase)
+  // Используем при загрузке WebApp, чтобы XP не "обнулялся"
+  hydrateFromServer: (payload: {
+    totalXp: number;
+    level?: number;
+    currentXp?: number;
+    nextLevelXp?: number;
+    tasks?: XpProfile["tasks"];
+  }) => void;
+
   addXp: (amount: number, meta?: AddXpMeta) => void;
   completeTask: (taskId: string) => void;
 
@@ -124,6 +139,52 @@ export const useXpStore = create<XpState>((set, get) => ({
   profile: initialProfile,
   lastLevelUpAt: null,
   events: [],
+
+  userId: null,
+
+  setUserId: (userId) => {
+    set({ userId });
+  },
+
+  // Гидрация профиля реальными данными с Supabase
+  // (используем при входе, чтобы не было сброса XP)
+  hydrateFromServer: (payload) => {
+    set((state) => {
+      const totalXp =
+        typeof payload.totalXp === "number"
+          ? payload.totalXp
+          : state.profile.stats.totalXp;
+
+      const calc = calculateLevelStats(totalXp);
+
+      const level =
+        typeof payload.level === "number" ? payload.level : calc.level;
+      const currentXp =
+        typeof payload.currentXp === "number"
+          ? payload.currentXp
+          : calc.currentXp;
+      const nextLevelXp =
+        typeof payload.nextLevelXp === "number"
+          ? payload.nextLevelXp
+          : calc.nextLevelXp;
+
+      const tasks = payload.tasks ?? state.profile.tasks;
+
+      return {
+        profile: {
+          ...state.profile,
+          stats: {
+            ...state.profile.stats,
+            totalXp,
+            level,
+            currentXp,
+            nextLevelXp,
+          },
+          tasks,
+        },
+      };
+    });
+  },
 
   // Начисление XP + генерация событий
   addXp: (amount, meta) => {
@@ -182,24 +243,31 @@ export const useXpStore = create<XpState>((set, get) => ({
     });
 
     // 🔥 отправляем события в Supabase через наш API
-    postXpEventToServer({
-      userId: DEFAULT_USER_ID,
-      type: "xp_gain",
-      amount,
-      source: meta?.source,
-      taskId: meta?.taskId,
-    });
-
-    if (calc.level > prevLevel) {
+    const currentUserId = prev.userId;
+    if (currentUserId) {
       postXpEventToServer({
-        userId: DEFAULT_USER_ID,
-        type: "level_up",
+        userId: currentUserId,
+        type: "xp_gain",
         amount,
         source: meta?.source,
         taskId: meta?.taskId,
-        levelFrom: prevLevel,
-        levelTo: calc.level,
       });
+
+      if (calc.level > prevLevel) {
+        postXpEventToServer({
+          userId: currentUserId,
+          type: "level_up",
+          amount,
+          source: meta?.source,
+          taskId: meta?.taskId,
+          levelFrom: prevLevel,
+          levelTo: calc.level,
+        });
+      }
+    } else {
+      console.warn(
+        "[XP] addXp called without userId — события не отправлены на сервер"
+      );
     }
   },
 
@@ -255,14 +323,19 @@ export const useXpStore = create<XpState>((set, get) => ({
     });
 
     // 🔥 отправляем task_completed в Supabase
-    if (targetTask) {
+    const currentUserId = prev.userId;
+    if (targetTask && currentUserId) {
       postXpEventToServer({
-        userId: DEFAULT_USER_ID,
+        userId: currentUserId,
         type: "task_completed",
         amount: targetTask.xp,
         source: targetTask.category,
         taskId: targetTask.id,
       });
+    } else if (!currentUserId) {
+      console.warn(
+        "[XP] completeTask called without userId — событие не отправлено на сервер"
+      );
     }
   },
 
