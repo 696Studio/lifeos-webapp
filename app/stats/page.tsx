@@ -287,7 +287,7 @@ export default function StatsPage() {
                 style={{
                   width: `${progressPercent}%`,
                   height: "100%",
-                  background: "linear-gradient(90deg, #00ffff, #00c6ff)`,
+                  background: "linear-gradient(90deg, #00ffff, #00c6ff)",
                   transition: "width 0.2s ease-out",
                 }}
               />
