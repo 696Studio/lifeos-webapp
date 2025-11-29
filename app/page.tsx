@@ -23,6 +23,11 @@ export default function HomePage() {
   const lastLevelUpAt = useXpStore((s) => s.lastLevelUpAt);
   const [flash, setFlash] = useState(false);
 
+  // статус синхронизации профиля (для отладки)
+  const [syncStatus, setSyncStatus] = useState<
+    "idle" | "pending" | "ok" | "error"
+  >("idle");
+
   useEffect(() => {
     if (!lastLevelUpAt) return;
 
@@ -34,16 +39,18 @@ export default function HomePage() {
 
   // 🔐 Синхронизация профиля в Supabase по Telegram userId
   useEffect(() => {
-    // если не Телеграм — ничего не делаем
+    // если не в Telegram — не дёргаем API
     if (!isTelegram) return;
     // ждём пока приедет userId и initDataRaw
     if (!userId || !initDataRaw) return;
-    // защищаемся от пустых статов
+    // базовая защита от пустых статов
     if (totalXP == null || level == null) return;
 
     const syncProfile = async () => {
       try {
-        await fetch("/api/xp/profile/sync", {
+        setSyncStatus("pending");
+
+        const res = await fetch("/api/xp/profile/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -57,8 +64,23 @@ export default function HomePage() {
             },
           }),
         });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          console.error(
+            "XP profile sync failed:",
+            res.status,
+            res.statusText,
+            data
+          );
+          setSyncStatus("error");
+          return;
+        }
+
+        setSyncStatus("ok");
       } catch (err) {
         console.error("Failed to sync XP profile", err);
+        setSyncStatus("error");
       }
     };
 
@@ -183,6 +205,22 @@ export default function HomePage() {
           >
             Получить XP (через бота)
           </button>
+        </div>
+
+        {/* 🔍 DEBUG-блок — временно, чтобы понять, что происходит в Telegram */}
+        <div
+          style={{
+            marginTop: "20px",
+            paddingTop: "10px",
+            borderTop: "1px solid rgba(148, 163, 184, 0.2)",
+            fontSize: "11px",
+            color: "#64748b",
+          }}
+        >
+          <div>DEBUG:</div>
+          <div>isTelegram: {String(isTelegram)}</div>
+          <div>userId: {userId ?? "null"}</div>
+          <div>syncStatus: {syncStatus}</div>
         </div>
       </Card>
     </main>
