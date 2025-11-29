@@ -3,6 +3,7 @@
 import "./globals.css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Script from "next/script";
 
 export default function RootLayout({
   children,
@@ -31,6 +32,12 @@ export default function RootLayout({
             '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
         }}
       >
+        {/* 🔌 Подключаем Telegram WebApp скрипт */}
+        <Script
+          src="https://telegram.org/js/telegram-web-app.js"
+          strategy="beforeInteractive"
+        />
+
         <div
           style={{
             position: "relative",
