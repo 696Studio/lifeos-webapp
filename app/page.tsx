@@ -31,7 +31,7 @@ export default function HomePage() {
   const lastLevelUpAt = useXpStore((s) => s.lastLevelUpAt);
   const [flash, setFlash] = useState(false);
 
-  // статусов два: загрузка профиля + синк
+  // статусы: загрузка профиля + синк
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "pending" | "ok" | "error"
   >("idle");
@@ -94,7 +94,7 @@ export default function HomePage() {
     if (profileLoaded) return; // уже загрузили
 
     const loadProfile = async () => {
-      try:
+      try {
         setLoadStatus("pending");
 
         const res = await fetch(`/api/xp/profile?userId=${userId}`);
@@ -421,7 +421,7 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* 🔍 DEBUG-блок — временно, чтобы понять, что происходит в Telegram */}
+        {/* 🔍 DEBUG-блок — временно */}
         <div
           style={{
             marginTop: "20px",
