@@ -33,6 +33,32 @@ export async function POST(req: Request) {
         ? String(categoryRaw).trim()
         : "general";
 
+    // ✅ тип задачи: single / daily / multi
+    const taskTypeRaw = body?.taskType;
+    let taskType = "single" as "single" | "daily" | "multi";
+
+    if (typeof taskTypeRaw === "string") {
+      const normalized = taskTypeRaw.trim().toLowerCase();
+      if (normalized === "daily") taskType = "daily";
+      else if (normalized === "multi") taskType = "multi";
+      else taskType = "single";
+    }
+
+    // ✅ лимит выполнений на пользователя
+    const maxUserCompletionsRaw = body?.maxUserCompletions;
+    let maxUserCompletions: number | null = null;
+
+    if (
+      maxUserCompletionsRaw !== undefined &&
+      maxUserCompletionsRaw !== null &&
+      maxUserCompletionsRaw !== ""
+    ) {
+      const n = Number(maxUserCompletionsRaw);
+      if (!Number.isNaN(n) && Number.isFinite(n) && n >= 0) {
+        maxUserCompletions = n;
+      }
+    }
+
     if (!title) {
       return NextResponse.json(
         { error: "INVALID_BODY", message: "title is required" },
@@ -84,7 +110,9 @@ export async function POST(req: Request) {
           deadline_at: deadlineAt,
           created_by: createdBy,
           is_active: true,
-          category, // 👈 вот это ключевое
+          category, // 👈 категория
+          task_type: taskType, // 👈 новый тип задачи
+          max_user_completions: maxUserCompletions, // 👈 лимит на пользователя
         },
       ])
       .select()
@@ -122,6 +150,8 @@ export async function POST(req: Request) {
       createdBy: data.created_by,
       isActive: data.is_active,
       category: data.category,
+      taskType: data.task_type,
+      maxUserCompletions: data.max_user_completions,
     };
 
     return NextResponse.json({
