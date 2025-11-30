@@ -1,7 +1,20 @@
-// app/api/xp/tasks/delete/route.ts
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
+/**
+ * Мягкое отключение задачи:
+ *
+ * POST /api/xp/tasks/delete
+ * {
+ *   "taskCode": "SOME_CODE"
+ * }
+ *
+ * Логика:
+ *  - Находим задачу по code
+ *  - Если уже is_active = false → говорим, что уже отключена
+ *  - Если is_active = true → ставим is_active = false
+ *  - Поле status НЕ трогаем (чтобы не ломать enum xp_task_status)
+ */
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => null);
@@ -22,7 +35,7 @@ export async function POST(req: Request) {
     // 1) Ищем задачу по коду
     const { data: task, error: taskError } = await supabase
       .from("xp_tasks")
-      .select("id, code, status")
+      .select("id, code, status, is_active")
       .eq("code", taskCode)
       .single();
 
@@ -37,23 +50,24 @@ export async function POST(req: Request) {
       );
     }
 
-    const currentStatus = (task.status as string | null) ?? null;
+    const isActive =
+      typeof task.is_active === "boolean" ? task.is_active : true;
 
-    // 2) Если уже в архиве — просто говорим об этом
-    if (currentStatus === "archived") {
+    // 2) Если уже выключена — считаем операцию идемпотентной
+    if (!isActive) {
       return NextResponse.json({
         ok: true,
         taskCode,
-        status: "archived",
+        isActive: false,
         alreadyDeleted: true,
       });
     }
 
-    // 3) Обновляем статус на archived
+    // 3) Отключаем задачу (is_active = false), status не трогаем
     const { error: updateError } = await supabase
       .from("xp_tasks")
       .update({
-        status: "archived",
+        is_active: false,
         updated_at: new Date().toISOString(),
       })
       .eq("id", task.id);
@@ -72,11 +86,11 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       taskCode,
-      status: "archived",
+      isActive: false,
       alreadyDeleted: false,
     });
   } catch (e: any) {
-    console.error("[XP] tasks/delete: server error:", e);
+    console.error("[XP] /api/xp/tasks/delete error:", e);
     return NextResponse.json(
       {
         error: "SERVER_ERROR",

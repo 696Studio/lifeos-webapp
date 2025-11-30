@@ -1,4 +1,3 @@
-// app/api/xp/tasks/route.ts
 import { NextResponse } from "next/server";
 import { supabase } from "../../../../lib/supabaseClient";
 
@@ -7,6 +6,9 @@ export async function GET() {
     const { data, error } = await supabase
       .from("xp_tasks")
       .select("*")
+      // показываем только активные задачи
+      .eq("is_active", true)
+      // и только статусы, которые должны жить в Earn
       .in("status", ["active", "locked"])
       .order("created_at", { ascending: true });
 
