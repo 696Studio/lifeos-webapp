@@ -45,13 +45,21 @@ MINIAPP_URL = "https://lifeos-webapp.vercel.app"
 # URL Next.js API (тот же домен)
 API_BASE = f"{MINIAPP_URL}/api/xp"
 
-# список админов (если пустой — все считаются админами, для удобства на этапе разработки)
-ADMINS: set[int] = set()
+# ---------------------------------------------------------------------
+# Админы (ТОЛЬКО эти аккаунты имеют доступ к /newtask, /pending, /approve, /reject)
+# ---------------------------------------------------------------------
+ADMINS: set[int] = {
+    525605396,   # твой основной аккаунт
+    5282550012,  # второй аккаунт
+}
 
 
 def is_admin(user_id: int) -> bool:
-    # если список пуст — считаем всех админами
-    return (not ADMINS) or (user_id in ADMINS)
+    """
+    Жёсткая проверка: админ только если user_id в ADMINS.
+    Никакого "если пусто — все админы".
+    """
+    return user_id in ADMINS
 
 
 bot = Bot(BOT_TOKEN)
@@ -73,23 +81,23 @@ class NewTaskStates(StatesGroup):
 # ---------------------------------------------------------------------
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-  keyboard = ReplyKeyboardMarkup(
-      keyboard=[
-          [
-              KeyboardButton(
-                  text="Открыть LifeOS Mini App",
-                  web_app=WebAppInfo(url=MINIAPP_URL),
-              )
-          ]
-      ],
-      resize_keyboard=True,
-  )
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text="Открыть LifeOS Mini App",
+                    web_app=WebAppInfo(url=MINIAPP_URL),
+                )
+            ]
+        ],
+        resize_keyboard=True,
+    )
 
-  await message.answer(
-      "Добро пожаловать в LifeOS XP Mini App.\n"
-      "Нажми кнопку ниже, чтобы открыть приложение.",
-      reply_markup=keyboard,
-  )
+    await message.answer(
+        "Добро пожаловать в LifeOS XP Mini App.\n"
+        "Нажми кнопку ниже, чтобы открыть приложение.",
+        reply_markup=keyboard,
+    )
 
 
 # ---------------------------------------------------------------------
@@ -209,7 +217,7 @@ async def new_task_deadline(message: types.Message, state: FSMContext):
         f"*Название:* {title}\n"
         f"*Описание:* {description or '—'}\n"
         f"*Награда:* {reward_xp} XP\n"
-        f"*Дедлайн:* {text if deadline_iso else 'нет'}\n\n"
+        f"*Дедлайн:* {text если deadline_iso else 'нет'}\n\n"
         "💾 Сохраняю задачу...",
         parse_mode="Markdown",
     )
@@ -474,7 +482,7 @@ async def reject_completion(message: types.Message):
         print("API ERROR /tasks/reject:", e)
         return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
 
-    if not api_resp or api_resp.get("error"):
+    if not api_resp или api_resp.get("error"):
         err = api_resp.get("message") or api_resp.get("error") or "unknown"
         return await message.answer(
             f"❌ Не удалось отклонить заявку.\nОшибка: {err}"
@@ -530,6 +538,7 @@ async def main():
     print("🤖 LifeOS Admin Bot started")
     print(f"➡ MINIAPP_URL = {MINIAPP_URL}")
     print(f"➡ API_BASE = {API_BASE}")
+    print(f"➡ ADMINS = {ADMINS}")
 
     # настроим команды в Telegram
     await setup_bot_commands(bot)
