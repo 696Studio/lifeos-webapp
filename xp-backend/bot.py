@@ -73,6 +73,8 @@ class NewTaskStates(StatesGroup):
     waiting_for_title = State()
     waiting_for_description = State()
     waiting_for_reward = State()
+    waiting_for_type = State()
+    waiting_for_iterations = State()
     waiting_for_deadline = State()
 
 
@@ -173,11 +175,113 @@ async def new_task_reward(message: types.Message, state: FSMContext):
         return await message.answer("❗ Награда должна быть больше 0. Попробуй ещё раз.")
 
     await state.update_data(reward_xp=reward_xp)
-    await state.set_state(NewTaskStates.waiting_for_deadline)
+    await state.set_state(NewTaskStates.waiting_for_type)
 
     await message.answer(
-        "⏰ Теперь дедлайн.\n\n"
-        "Отправь дату в формате `YYYY-MM-DD` (например: `2025-12-31`)\n"
+        "⚙️ Теперь укажи *тип задачи*.\n\n"
+        "Отправь цифру:\n"
+        "`1` — разовая (1 раз на человека)\n"
+        "`2` — ежедневка (1 раз в день на человека)\n"
+        "`3` — ограниченная по количеству раз на человека\n\n"
+        "Позже мы используем это, чтобы скрывать задачи, которые уже сделаны.",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(NewTaskStates.waiting_for_type)
+async def new_task_type(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return await message.answer("⛔ Доступ запрещён.")
+
+    raw = message.text.strip().lower()
+
+    task_type: str
+    max_user_completions: int | None
+
+    if raw in ("1", "разовая", "once", "one"):
+        task_type = "single"
+        max_user_completions = 1
+        await state.update_data(
+            task_type=task_type,
+            max_user_completions=max_user_completions,
+        )
+        await state.set_state(NewTaskStates.waiting_for_deadline)
+        return await message.answer(
+            "✅ Тип: *разовая* (1 раз на человека).\n\n"
+            "Теперь отправь дедлайн в формате `YYYY-MM-DD`\n"
+            "или напиши `нет`, если дедлайн не нужен.",
+            parse_mode="Markdown",
+        )
+
+    if raw in ("2", "ежедневка", "daily"):
+        task_type = "daily"
+        # 1 раз в день — будем обрабатывать логикой на бэке позже
+        max_user_completions = 1
+        await state.update_data(
+            task_type=task_type,
+            max_user_completions=max_user_completions,
+        )
+        await state.set_state(NewTaskStates.waiting_for_deadline)
+        return await message.answer(
+            "✅ Тип: *ежедневка* (1 раз в день на человека).\n\n"
+            "Теперь отправь дедлайн в формате `YYYY-MM-DD`\n"
+            "или напиши `нет`, если дедлайн не нужен.",
+            parse_mode="Markdown",
+        )
+
+    if raw in ("3", "multi", "несколько", "n", "многократная"):
+        task_type = "multi"
+        await state.update_data(task_type=task_type)
+        await state.set_state(NewTaskStates.waiting_for_iterations)
+        return await message.answer(
+            "🔁 Сколько *максимум раз один человек* может получить XP за эту задачу?\n\n"
+            "Отправь число.\n"
+            "`0` — без ограничения (можно бесконечно).",
+            parse_mode="Markdown",
+        )
+
+    return await message.answer(
+        "❗ Неверный вариант.\n\n"
+        "Отправь:\n"
+        "`1` — разовая\n"
+        "`2` — ежедневка\n"
+        "`3` — ограниченная по количеству раз",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(NewTaskStates.waiting_for_iterations)
+async def new_task_iterations(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return await message.answer("⛔ Доступ запрещён.")
+
+    text = message.text.strip().replace(" ", "")
+
+    if not text.isdigit():
+        return await message.answer(
+            "❗ Нужно отправить *целое число*.\n"
+            "`0` — без ограничения.\n\n"
+            "Попробуй ещё раз.",
+            parse_mode="Markdown",
+        )
+
+    max_iter = int(text)
+    if max_iter < 0:
+        return await message.answer(
+            "❗ Число не может быть отрицательным. Отправь 0 или больше.",
+            parse_mode="Markdown",
+        )
+
+    await state.update_data(max_user_completions=max_iter)
+    await state.set_state(NewTaskStates.waiting_for_deadline)
+
+    human_limit = "без ограничения" if max_iter == 0 else f"{max_iter} раз"
+
+    await message.answer(
+        f"✅ Лимит на пользователя: *{human_limit}*.\n\n"
+        "Теперь отправь дедлайн в формате `YYYY-MM-DD`\n"
         "или напиши `нет`, если дедлайн не нужен.",
         parse_mode="Markdown",
     )
@@ -210,13 +314,43 @@ async def new_task_deadline(message: types.Message, state: FSMContext):
     description = data.get("description")
     reward_xp = data.get("reward_xp")
 
+    task_type = data.get("task_type") or "single"
+    max_user_completions = data.get("max_user_completions")
+
     await state.clear()
+
+    # человекочитаемые подписи типа
+    if task_type == "daily":
+        type_label = "ежедневка (1 раз в день на человека)"
+    elif task_type == "multi":
+        if max_user_completions is None or max_user_completions == 0:
+            type_label = "многократная (без ограничения на пользователя)"
+        else:
+            type_label = f"многократная (до {max_user_completions} раз на пользователя)"
+    else:
+        type_label = "разовая (1 раз на человека)"
+
+    human_limit = (
+        "1"
+        if task_type == "single"
+        else (
+            "1 в день"
+            if task_type == "daily"
+            else (
+                "без ограничения"
+                if (max_user_completions is None or max_user_completions == 0)
+                else str(max_user_completions)
+            )
+        )
+    )
 
     await message.answer(
         "✅ Сводка задачи:\n\n"
         f"*Название:* {title}\n"
         f"*Описание:* {description or '—'}\n"
         f"*Награда:* {reward_xp} XP\n"
+        f"*Тип:* {type_label}\n"
+        f"*Максимум на пользователя:* {human_limit}\n"
         f"*Дедлайн:* {text if deadline_iso else 'нет'}\n\n"
         "💾 Сохраняю задачу...",
         parse_mode="Markdown",
@@ -228,6 +362,9 @@ async def new_task_deadline(message: types.Message, state: FSMContext):
         "rewardXp": reward_xp,
         "deadlineAt": deadline_iso,
         "createdBy": message.from_user.id,
+        # новые поля — будем использовать в API/фронте
+        "taskType": task_type,
+        "maxUserCompletions": max_user_completions,
     }
 
     try:
@@ -246,7 +383,8 @@ async def new_task_deadline(message: types.Message, state: FSMContext):
     await message.answer(
         "🔥 Задача создана!\n\n"
         f"*Код задачи:* `{code}`\n"
-        f"*Награда:* {reward_xp} XP\n\n"
+        f"*Награда:* {reward_xp} XP\n"
+        f"*Тип:* {type_label}\n\n"
         "Пользователи смогут выполнить её через /tasks и /done.",
         parse_mode="Markdown",
     )
@@ -495,7 +633,7 @@ async def reject_completion(message: types.Message):
 
 
 # ---------------------------------------------------------------------
-# ADMIN: /deletetask <TASK_CODE> — мягко отключить задачу (status = deleted)
+# ADMIN: /deletetask <TASK_CODE> — мягко отключить задачу (is_active = false)
 # ---------------------------------------------------------------------
 @dp.message(Command("deletetask"))
 async def delete_task(message: types.Message):
@@ -521,7 +659,7 @@ async def delete_task(message: types.Message):
     task_code = args[1].strip().upper()
 
     await message.answer(
-        f"🗑 Отключаю задачу `{task_code}` (status = deleted)...",
+        f"🗑 Отключаю задачу `{task_code}` (уберу её из Earn)...",
         parse_mode="Markdown",
     )
 
@@ -546,16 +684,16 @@ async def delete_task(message: types.Message):
         )
 
     already_deleted = bool(api_resp.get("alreadyDeleted"))
-    status = api_resp.get("status") or "deleted"
+    is_active = api_resp.get("isActive")
 
-    if already_deleted:
+    if already_deleted or is_active is False:
         text = (
-            f"⚠ Задача `{task_code}` уже была в статусе `deleted`.\n"
+            f"⚠ Задача `{task_code}` уже была отключена.\n"
             "Earn её и так не показывает."
         )
     else:
         text = (
-            f"✅ Задача `{task_code}` переведена в статус `{status}`.\n"
+            f"✅ Задача `{task_code}` отключена.\n"
             "Она больше не будет появляться в разделе Earn."
         )
 
