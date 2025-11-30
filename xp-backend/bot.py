@@ -217,7 +217,7 @@ async def new_task_deadline(message: types.Message, state: FSMContext):
         f"*Название:* {title}\n"
         f"*Описание:* {description or '—'}\n"
         f"*Награда:* {reward_xp} XP\n"
-        f"*Дедлайн:* {text если deadline_iso else 'нет'}\n\n"
+        f"*Дедлайн:* {text if deadline_iso else 'нет'}\n\n"
         "💾 Сохраняю задачу...",
         parse_mode="Markdown",
     )
@@ -482,7 +482,7 @@ async def reject_completion(message: types.Message):
         print("API ERROR /tasks/reject:", e)
         return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
 
-    if not api_resp или api_resp.get("error"):
+    if not api_resp or api_resp.get("error"):
         err = api_resp.get("message") or api_resp.get("error") or "unknown"
         return await message.answer(
             f"❌ Не удалось отклонить заявку.\nОшибка: {err}"
