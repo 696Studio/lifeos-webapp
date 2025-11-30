@@ -26,7 +26,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1) Находим активную задачу по коду
+    // 1) Находим задачу по коду (в т.ч. её тип, лимиты и дедлайн)
     const { data: task, error: taskError } = await supabase
       .from("xp_tasks")
       .select(
@@ -37,11 +37,11 @@ export async function POST(req: Request) {
         reward_xp,
         is_active,
         task_type,
-        max_user_completions
+        max_user_completions,
+        deadline_at
       `
       )
       .eq("code", taskCode)
-      .eq("is_active", true)
       .maybeSingle();
 
     if (taskError) {
@@ -52,11 +52,31 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!task) {
+    if (!task || task.is_active === false) {
       return NextResponse.json(
-        { error: "TASK_NOT_FOUND", message: "Task not found or inactive" },
+        {
+          error: "TASK_NOT_FOUND",
+          message: "Task not found or inactive",
+        },
         { status: 404 }
       );
+    }
+
+    // 1.1) Проверяем дедлайн
+    if (task.deadline_at) {
+      const now = new Date();
+      const deadline = new Date(task.deadline_at);
+      if (now.getTime() > deadline.getTime()) {
+        return NextResponse.json(
+          {
+            ok: true,
+            status: "task_inactive",
+            reason: "DEADLINE_PASSED",
+            taskCode: task.code,
+          },
+          { status: 200 }
+        );
+      }
     }
 
     const taskId: number = task.id;
@@ -67,16 +87,12 @@ export async function POST(req: Request) {
       | undefined;
 
     // 2) Считаем, сколько раз юзер уже выполнял эту задачу
-    //    approved + pending (чтоб не спамили)
+    //    approved + pending (чтобы не спамили)
     const now = new Date();
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0,
-      0,
-      0,
-      0
+
+    // Старт сегодняшнего дня в UTC (под supabase timestamptz)
+    const startOfTodayUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)
     );
 
     let query = supabase
@@ -86,9 +102,9 @@ export async function POST(req: Request) {
       .eq("telegram_user_id", userId)
       .in("status", ["pending", "approved"]);
 
-    // Для daily считаем только сегодняшние выполнения
+    // Для daily считаем только сегодняшние выполнения (по UTC)
     if (taskType === "daily") {
-      query = query.gte("created_at", startOfToday.toISOString());
+      query = query.gte("created_at", startOfTodayUtc.toISOString());
     }
 
     const { data: completions, error: compError, count } = await query;
@@ -101,7 +117,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const usedCount = typeof count === "number" ? count : (completions?.length ?? 0);
+    const usedCount =
+      typeof count === "number" ? count : (completions?.length ?? 0);
 
     // 3) Определяем лимит для юзера
     // single: минимум 1
@@ -111,12 +128,14 @@ export async function POST(req: Request) {
 
     if (taskType === "single") {
       maxForUser =
-        typeof rawMaxUserCompletions === "number" && rawMaxUserCompletions > 0
+        typeof rawMaxUserCompletions === "number" &&
+        rawMaxUserCompletions > 0
           ? rawMaxUserCompletions
           : 1;
     } else if (taskType === "daily") {
       maxForUser =
-        typeof rawMaxUserCompletions === "number" && rawMaxUserCompletions > 0
+        typeof rawMaxUserCompletions === "number" &&
+        rawMaxUserCompletions > 0
           ? rawMaxUserCompletions
           : 1;
     } else if (taskType === "multi") {
@@ -151,6 +170,7 @@ export async function POST(req: Request) {
           task_id: taskId,
           telegram_user_id: userId,
           status: "pending",
+          reward_xp: task.reward_xp, // сразу сохраняем, чтобы дальше было проще
         },
       ])
       .select("id, status, created_at")
