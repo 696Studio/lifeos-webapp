@@ -46,7 +46,7 @@ MINIAPP_URL = "https://lifeos-webapp.vercel.app"
 API_BASE = f"{MINIAPP_URL}/api/xp"
 
 # ---------------------------------------------------------------------
-# Админы (ТОЛЬКО эти аккаунты имеют доступ к /newtask, /pending, /approve, /reject)
+# Админы (ТОЛЬКО эти аккаунты имеют доступ к /newtask, /pending, /approve, /reject, /deletetask)
 # ---------------------------------------------------------------------
 ADMINS: set[int] = {
     525605396,   # твой основной аккаунт
@@ -495,6 +495,74 @@ async def reject_completion(message: types.Message):
 
 
 # ---------------------------------------------------------------------
+# ADMIN: /deletetask <TASK_CODE> — мягко отключить задачу (status = deleted)
+# ---------------------------------------------------------------------
+@dp.message(Command("deletetask"))
+async def delete_task(message: types.Message):
+    """
+    Мягкое удаление задачи:
+    /deletetask CODE
+
+    Под капотом:
+    POST /api/xp/tasks/delete  { "taskCode": "CODE" }
+    """
+    if not is_admin(message.from_user.id):
+        return await message.answer("⛔ Доступ запрещён.")
+
+    args = message.text.split()
+    if len(args) < 2:
+        return await message.answer(
+            "❗ Укажи код задачи, которую нужно отключить.\n\n"
+            "Пример:\n"
+            "`/deletetask DAILY_1234`",
+            parse_mode="Markdown",
+        )
+
+    task_code = args[1].strip().upper()
+
+    await message.answer(
+        f"🗑 Отключаю задачу `{task_code}` (status = deleted)...",
+        parse_mode="Markdown",
+    )
+
+    payload = {
+        "taskCode": task_code,
+    }
+
+    try:
+        api_resp = await call_api("tasks/delete", payload)
+    except Exception as e:
+        print("API ERROR /tasks/delete:", e)
+        return await message.answer("❌ Ошибка при обращении к API. Попробуй позже.")
+
+    if not api_resp or api_resp.get("error"):
+        err = (
+            api_resp.get("message")
+            or api_resp.get("error")
+            or "unknown"
+        )
+        return await message.answer(
+            f"❌ Не удалось отключить задачу.\nОшибка: {err}"
+        )
+
+    already_deleted = bool(api_resp.get("alreadyDeleted"))
+    status = api_resp.get("status") or "deleted"
+
+    if already_deleted:
+        text = (
+            f"⚠ Задача `{task_code}` уже была в статусе `deleted`.\n"
+            "Earn её и так не показывает."
+        )
+    else:
+        text = (
+            f"✅ Задача `{task_code}` переведена в статус `{status}`.\n"
+            "Она больше не будет появляться в разделе Earn."
+        )
+
+    await message.answer(text, parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------
 # Функция обращения к Next.js API
 # ---------------------------------------------------------------------
 async def call_api(path: str, payload: dict):
@@ -525,6 +593,7 @@ async def setup_bot_commands(bot: Bot):
         BotCommand(command="pending", description="Заявки на проверку (админ)"),
         BotCommand(command="approve", description="Одобрить заявку (админ)"),
         BotCommand(command="reject", description="Отклонить заявку (админ)"),
+        BotCommand(command="deletetask", description="Отключить задачу (админ)"),
     ]
 
     await bot.set_my_commands(commands)
