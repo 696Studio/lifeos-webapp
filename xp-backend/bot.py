@@ -9,6 +9,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     WebAppInfo,
+    BotCommand,
 )
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
@@ -72,23 +73,23 @@ class NewTaskStates(StatesGroup):
 # ---------------------------------------------------------------------
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(
-                    text="Открыть LifeOS Mini App",
-                    web_app=WebAppInfo(url=MINIAPP_URL),
-                )
-            ]
-        ],
-        resize_keyboard=True,
-    )
+  keyboard = ReplyKeyboardMarkup(
+      keyboard=[
+          [
+              KeyboardButton(
+                  text="Открыть LifeOS Mini App",
+                  web_app=WebAppInfo(url=MINIAPP_URL),
+              )
+          ]
+      ],
+      resize_keyboard=True,
+  )
 
-    await message.answer(
-        "Добро пожаловать в LifeOS XP Mini App.\n"
-        "Нажми кнопку ниже, чтобы открыть приложение.",
-        reply_markup=keyboard,
-    )
+  await message.answer(
+      "Добро пожаловать в LifeOS XP Mini App.\n"
+      "Нажми кнопку ниже, чтобы открыть приложение.",
+      reply_markup=keyboard,
+  )
 
 
 # ---------------------------------------------------------------------
@@ -505,12 +506,34 @@ async def call_api(path: str, payload: dict):
 
 
 # ---------------------------------------------------------------------
+# Настройка команд бота (меню при вводе / )
+# ---------------------------------------------------------------------
+async def setup_bot_commands(bot: Bot):
+    commands = [
+        BotCommand(command="start", description="Открыть LifeOS Mini App"),
+        BotCommand(command="tasks", description="Список активных задач"),
+        BotCommand(command="done", description="Отправить выполнение задачи"),
+        BotCommand(command="newtask", description="Создать задачу (админ)"),
+        BotCommand(command="pending", description="Заявки на проверку (админ)"),
+        BotCommand(command="approve", description="Одобрить заявку (админ)"),
+        BotCommand(command="reject", description="Отклонить заявку (админ)"),
+    ]
+
+    await bot.set_my_commands(commands)
+    print("✅ Bot commands set in Telegram")
+
+
+# ---------------------------------------------------------------------
 # START BOT
 # ---------------------------------------------------------------------
 async def main():
     print("🤖 LifeOS Admin Bot started")
     print(f"➡ MINIAPP_URL = {MINIAPP_URL}")
     print(f"➡ API_BASE = {API_BASE}")
+
+    # настроим команды в Telegram
+    await setup_bot_commands(bot)
+
     await dp.start_polling(bot)
 
 
