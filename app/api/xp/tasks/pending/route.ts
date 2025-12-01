@@ -12,8 +12,7 @@ export async function POST(req: Request) {
       limit = n;
     }
 
-    // 1) Берём pending-заявки из xp_task_completions
-    // и сразу подтягиваем связанную задачу
+    // 1) Берём последние completion-заявки БЕЗ фильтра по статусу
     const { data, error } = await supabase
       .from("xp_task_completions")
       .select(
@@ -33,7 +32,6 @@ export async function POST(req: Request) {
         )
       `
       )
-      .eq("status", "pending")
       .order("created_at", { ascending: true })
       .limit(limit);
 
@@ -52,8 +50,21 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2) Собираем ответ для бота
-    const items = data.map((c: any) => {
+    // 2) Оставляем только заявки со статусом pending
+    const pendingOnly = data.filter((c: any) => {
+      const s = (c.status ?? "").toString().toLowerCase();
+      return s === "pending";
+    });
+
+    if (pendingOnly.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        items: [],
+      });
+    }
+
+    // 3) Собираем то, что ждёт бот
+    const items = pendingOnly.map((c: any) => {
       const t = c.task || null;
 
       return {
