@@ -35,9 +35,11 @@ export default function EarnPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Статусы отправки выполнения
-  const [submitStatus, setSubmitStatus] = useState<Record<string, SubmitStatus>>({});
+  const [submitStatus, setSubmitStatus] = useState<Record<string, SubmitStatus>>(
+    {}
+  );
 
-  // 🔄 Загружаем задачи из API (с userId, если есть)
+  // 🔄 Загружаем задачи из API (с userId, если есть — для Smart Earn)
   useEffect(() => {
     const loadTasks = async () => {
       try {
@@ -46,7 +48,7 @@ export default function EarnPage() {
 
         const body: any = {};
         if (userId) {
-          body.userId = userId; // 👈 даём Smart Earn понять, кто мы
+          body.userId = userId; // 👈 Smart Earn знает, кто мы
         }
 
         const res = await fetch("/api/xp/tasks/list", {
@@ -122,33 +124,52 @@ export default function EarnPage() {
 
       const data = await res.json().catch(() => null);
 
-      if (!res.ok || !data || data.error) {
-        console.error("Submit task error:", res.status, data);
+      // ❌ Жёсткие ошибки от API
+      if (!res.ok || !data) {
+        // 404 + TASK_NOT_FOUND → реально задача выключена/удалена
+        if (res.status === 404 && data?.error === "TASK_NOT_FOUND") {
+          alert("Эта задача больше не активна. Обнови список заданий.");
+        } else {
+          alert("Не удалось отправить выполнение. Попробуй позже.");
+        }
+
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
         return;
       }
 
-      const status = data.status;
+      const status = data.status as string | undefined;
 
-      // 🔹 лимит достигнут
+      // 🔹 лимит выполнений для этого юзера
       if (status === "limit_reached") {
-        if (task.taskType === "daily") {
-          alert("Ты уже забрал XP за эту ежедневную задачу сегодня. Вернись завтра.");
+        const taskType =
+          (data.taskType as string | undefined) ?? task.taskType ?? "single";
+        const maxForUser = data.maxForUser as number | null | undefined;
+
+        if (taskType === "daily") {
+          alert(
+            "Ты уже забрал XP за эту ежедневную задачу сегодня. Вернись завтра ✨"
+          );
         } else {
-          alert("Лимит выполнений этой задачи для тебя уже достигнут.");
+          if (maxForUser == null) {
+            alert("Лимит выполнений для этой задачи уже достигнут.");
+          } else {
+            alert(
+              `Лимит выполнений для этой задачи достигнут. Ты уже сделал её максимум ${maxForUser} раз.`
+            );
+          }
         }
 
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "already" }));
         return;
       }
 
-      // 🔹 задача уже отправлена
+      // 🔹 задача уже была отправлена (старый контракт, но оставим)
       if (status === "already_submitted") {
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "already" }));
         return;
       }
 
-      // 🔹 какие-то edge-кейсы с неактивной/несуществующей задачей
+      // 🔹 задача реально не найдена / стала неактивной
       if (status === "task_not_found") {
         alert("Задача не найдена или была изменена. Обнови список задач.");
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
@@ -163,8 +184,12 @@ export default function EarnPage() {
 
       // 🔹 Обычный кейс — заявка создана, статус pending
       setSubmitStatus((prev) => ({ ...prev, [taskId]: "submitted" }));
+      alert(
+        "Заявка по задаче отправлена. После одобрения админом XP попадёт в твой профиль."
+      );
     } catch (e) {
       console.error("Failed to submit task", e);
+      alert("Ошибка при отправке выполнения. Попробуй ещё раз.");
       setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
     }
   };
@@ -394,13 +419,25 @@ export default function EarnPage() {
         </section>
 
         {isLoading && (
-          <p style={{ fontSize: "13px", color: "#9ca3af", marginBottom: "8px" }}>
+          <p
+            style={{
+              fontSize: "13px",
+              color: "#9ca3af",
+              marginBottom: "8px",
+            }}
+          >
             Загружаем задания…
           </p>
         )}
 
         {loadError && (
-          <p style={{ fontSize: "13px", color: "#f97373", marginBottom: "8px" }}>
+          <p
+            style={{
+              fontSize: "13px",
+              color: "#f97373",
+              marginBottom: "8px",
+            }}
+          >
             {loadError}
           </p>
         )}
