@@ -29,17 +29,14 @@ export default function EarnPage() {
   const currentXP = stats.currentXp;
   const nextLevelXP = stats.nextLevelXp;
 
-  // Локальные задачи
   const [tasks, setTasks] = useState<RemoteTask[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Статусы отправки выполнения
   const [submitStatus, setSubmitStatus] = useState<Record<string, SubmitStatus>>(
     {}
   );
 
-  // 🔄 Загружаем задачи из API (с userId, если есть — для Smart Earn)
+  // 🔄 грузим задачи, передавая userId (Smart Earn)
   useEffect(() => {
     const loadTasks = async () => {
       try {
@@ -48,7 +45,7 @@ export default function EarnPage() {
 
         const body: any = {};
         if (userId) {
-          body.userId = userId; // 👈 Smart Earn знает, кто мы
+          body.userId = userId;
         }
 
         const res = await fetch("/api/xp/tasks/list", {
@@ -124,22 +121,22 @@ export default function EarnPage() {
 
       const data = await res.json().catch(() => null);
 
-      // ❌ Жёсткие ошибки от API
+      // ❌ Системная ошибка / 404 и т.п.
       if (!res.ok || !data) {
-        // 404 + TASK_NOT_FOUND → реально задача выключена/удалена
         if (res.status === 404 && data?.error === "TASK_NOT_FOUND") {
           alert("Эта задача больше не активна. Обнови список заданий.");
         } else {
           alert("Не удалось отправить выполнение. Попробуй позже.");
         }
 
+        console.error("Submit task error:", res.status, data);
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
         return;
       }
 
       const status = data.status as string | undefined;
 
-      // 🔹 лимит выполнений для этого юзера
+      // 🔹 Лимит выполнений
       if (status === "limit_reached") {
         const taskType =
           (data.taskType as string | undefined) ?? task.taskType ?? "single";
@@ -163,26 +160,20 @@ export default function EarnPage() {
         return;
       }
 
-      // 🔹 задача уже была отправлена (старый контракт, но оставим)
+      // 🔹 Заявка уже есть (на будущее)
       if (status === "already_submitted") {
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "already" }));
         return;
       }
 
-      // 🔹 задача реально не найдена / стала неактивной
+      // 🔹 На всякий случай — если вдруг бэк вернёт TASK_NOT_FOUND как статус
       if (status === "task_not_found") {
         alert("Задача не найдена или была изменена. Обнови список задач.");
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
         return;
       }
 
-      if (status === "task_inactive") {
-        alert("Эта задача больше не активна.");
-        setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
-        return;
-      }
-
-      // 🔹 Обычный кейс — заявка создана, статус pending
+      // 🔹 Обычный кейс — заявка создана
       setSubmitStatus((prev) => ({ ...prev, [taskId]: "submitted" }));
       alert(
         "Заявка по задаче отправлена. После одобрения админом XP попадёт в твой профиль."
@@ -448,7 +439,6 @@ export default function EarnPage() {
           </p>
         )}
 
-        {/* Категории */}
         {inviteTasks.length > 0 && (
           <section style={{ marginBottom: "20px" }}>
             <h3
