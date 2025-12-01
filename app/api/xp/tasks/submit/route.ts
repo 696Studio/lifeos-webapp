@@ -26,7 +26,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1) Находим задачу по коду (в т.ч. её тип, лимиты и дедлайн)
+    // 1) Находим задачу по коду (НЕ фильтруем по is_active тут)
     const { data: task, error: taskError } = await supabase
       .from("xp_tasks")
       .select(
@@ -37,8 +37,7 @@ export async function POST(req: Request) {
         reward_xp,
         is_active,
         task_type,
-        max_user_completions,
-        deadline_at
+        max_user_completions
       `
       )
       .eq("code", taskCode)
@@ -52,47 +51,41 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!task || task.is_active === false) {
-      return NextResponse.json(
-        {
-          error: "TASK_NOT_FOUND",
-          message: "Task not found or inactive",
-        },
-        { status: 404 }
-      );
+    if (!task) {
+      // задача реально не найдена
+      return NextResponse.json({
+        ok: false,
+        status: "task_not_found",
+        message: "Task not found",
+      });
     }
 
-    // 1.1) Проверяем дедлайн
-    if (task.deadline_at) {
-      const now = new Date();
-      const deadline = new Date(task.deadline_at);
-      if (now.getTime() > deadline.getTime()) {
-        return NextResponse.json(
-          {
-            ok: true,
-            status: "task_inactive",
-            reason: "DEADLINE_PASSED",
-            taskCode: task.code,
-          },
-          { status: 200 }
-        );
-      }
-    }
-
-    const taskId: number = task.id;
+    const taskId = task.id;
     const taskType: string = task.task_type ?? "single";
     const rawMaxUserCompletions = task.max_user_completions as
       | number
       | null
       | undefined;
 
-    // 2) Считаем, сколько раз юзер уже выполнял эту задачу
-    //    approved + pending (чтобы не спамили)
-    const now = new Date();
+    // если задача выключена — сразу шлём статус
+    if (task.is_active === false) {
+      return NextResponse.json({
+        ok: true,
+        status: "task_inactive",
+        taskCode: task.code,
+      });
+    }
 
-    // Старт сегодняшнего дня в UTC (под supabase timestamptz)
-    const startOfTodayUtc = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)
+    // 2) Считаем, сколько раз юзер уже выполнял эту задачу
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0
     );
 
     let query = supabase
@@ -102,9 +95,9 @@ export async function POST(req: Request) {
       .eq("telegram_user_id", userId)
       .in("status", ["pending", "approved"]);
 
-    // Для daily считаем только сегодняшние выполнения (по UTC)
+    // для daily считаем только сегодняшние
     if (taskType === "daily") {
-      query = query.gte("created_at", startOfTodayUtc.toISOString());
+      query = query.gte("created_at", startOfToday.toISOString());
     }
 
     const { data: completions, error: compError, count } = await query;
@@ -120,10 +113,7 @@ export async function POST(req: Request) {
     const usedCount =
       typeof count === "number" ? count : (completions?.length ?? 0);
 
-    // 3) Определяем лимит для юзера
-    // single: минимум 1
-    // daily: минимум 1 в день
-    // multi: берём max_user_completions (0 или null => без лимита)
+    // 3) Определяем лимит
     let maxForUser: number | null = null;
 
     if (taskType === "single") {
@@ -145,11 +135,11 @@ export async function POST(req: Request) {
       ) {
         maxForUser = rawMaxUserCompletions;
       } else {
-        maxForUser = null; // без лимита
+        maxForUser = null; // без ограничения
       }
     }
 
-    // 4) Если лимит достигнут — возвращаем статус limit_reached (БЕЗ error)
+    // 4) Лимит достигнут — просто говорим об этом, без ошибки
     if (maxForUser !== null && usedCount >= maxForUser) {
       return NextResponse.json({
         ok: true,
@@ -162,7 +152,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 5) Создаём новую "заявку" в xp_task_completions со статусом pending
+    // 5) Создаём новую заявку
     const { data: insertData, error: insertError } = await supabase
       .from("xp_task_completions")
       .insert([
@@ -170,7 +160,8 @@ export async function POST(req: Request) {
           task_id: taskId,
           telegram_user_id: userId,
           status: "pending",
-          reward_xp: task.reward_xp, // сразу сохраняем, чтобы дальше было проще
+          // если в таблице есть колонка reward_xp — можно закидывать:
+          reward_xp: task.reward_xp ?? null,
         },
       ])
       .select("id, status, created_at")
