@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       limit = n;
     }
 
-    // 1) Берём последние completion-заявки БЕЗ фильтра по статусу
+    // 1) Берём последние completion-заявки, БЕЗ фильтра по статусу
     const { data, error } = await supabase
       .from("xp_task_completions")
       .select(
@@ -21,6 +21,7 @@ export async function POST(req: Request) {
         task_id,
         telegram_user_id,
         status,
+        reward_xp,
         created_at,
         approved_at,
         approved_by,
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
         )
       `
       )
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false }) // сначала самые новые
       .limit(limit);
 
     if (error) {
@@ -50,21 +51,8 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2) Оставляем только заявки со статусом pending
-    const pendingOnly = data.filter((c: any) => {
-      const s = (c.status ?? "").toString().toLowerCase();
-      return s === "pending";
-    });
-
-    if (pendingOnly.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        items: [],
-      });
-    }
-
-    // 3) Собираем то, что ждёт бот
-    const items = pendingOnly.map((c: any) => {
+    // 2) Просто мапим всё как есть
+    const items = data.map((c: any) => {
       const t = c.task || null;
 
       return {
@@ -73,8 +61,11 @@ export async function POST(req: Request) {
         taskCode: t?.code ?? null,
         taskTitle: t?.title ?? null,
         telegramUserId: c.telegram_user_id as number,
-        status: c.status as string,
-        rewardXp: (t?.reward_xp as number | null) ?? 0,
+        status: (c.status ?? "").toString(),
+        rewardXp:
+          (c.reward_xp as number | null) ??
+          (t?.reward_xp as number | null) ??
+          0,
         createdAt: c.created_at as string,
         approvedAt: (c.approved_at as string | null) ?? null,
         approvedBy: (c.approved_by as number | null) ?? null,
