@@ -472,6 +472,8 @@ async def submit_task(message: types.Message):
         )
 
     status = api_resp.get("status") or "pending"
+    task_type = api_resp.get("taskType") or "single"
+    max_for_user = api_resp.get("maxForUser")
 
     # 🔹 когда задача не найдена / уже неактивна
     if status == "task_not_found":
@@ -488,9 +490,6 @@ async def submit_task(message: types.Message):
 
     # 🔹 Лимит попыток для этой задачи
     if status == "limit_reached":
-        max_for_user = api_resp.get("maxForUser")
-        task_type = api_resp.get("taskType") or "single"
-
         if task_type == "daily":
             # ежедневка — уже делал сегодня
             return await message.answer(
