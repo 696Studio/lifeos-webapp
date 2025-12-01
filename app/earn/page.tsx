@@ -14,6 +14,7 @@ type RemoteTask = {
   rewardXp: number;
   deadlineAt: string | null;
   isActive: boolean;
+  taskType?: string | null;
 };
 
 type SubmitStatus = "idle" | "pending" | "submitted" | "already" | "error";
@@ -21,7 +22,7 @@ type SubmitStatus = "idle" | "pending" | "submitted" | "already" | "error";
 export default function EarnPage() {
   const { userId, isTelegram } = useTelegram();
 
-  // XP-статистика из стора (пока ещё локальная)
+  // XP-статистика из стора (пока локальная)
   const level = useXpStore((s) => s.getLevel());
   const progressPercent = useXpStore((s) => s.getProgressPercent());
   const stats = useXpStore((s) => s.profile.stats);
@@ -36,17 +37,22 @@ export default function EarnPage() {
   // Статусы отправки выполнения
   const [submitStatus, setSubmitStatus] = useState<Record<string, SubmitStatus>>({});
 
-  // 🔄 Загружаем задачи из API
+  // 🔄 Загружаем задачи из API (с userId, если есть)
   useEffect(() => {
     const loadTasks = async () => {
       try {
         setIsLoading(true);
         setLoadError(null);
 
+        const body: any = {};
+        if (userId) {
+          body.userId = userId; // 👈 даём Smart Earn понять, кто мы
+        }
+
         const res = await fetch("/api/xp/tasks/list", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify(body),
         });
 
         if (!res.ok) {
@@ -58,7 +64,7 @@ export default function EarnPage() {
         const data = await res.json();
 
         const tasksFromApi: RemoteTask[] = (data.tasks ?? []).map((t: any) => ({
-          id: t.id,
+          id: String(t.id),
           code: t.code ?? null,
           title: t.title ?? "Без названия",
           description: t.description ?? null,
@@ -66,6 +72,7 @@ export default function EarnPage() {
           rewardXp: t.rewardXp ?? 0,
           deadlineAt: t.deadlineAt ?? null,
           isActive: t.isActive !== false,
+          taskType: t.taskType ?? "single",
         }));
 
         setTasks(tasksFromApi);
@@ -78,7 +85,7 @@ export default function EarnPage() {
     };
 
     loadTasks();
-  }, []);
+  }, [userId]);
 
   const handleTaskClick = async (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
@@ -121,11 +128,41 @@ export default function EarnPage() {
         return;
       }
 
-      if (data.status === "already_submitted") {
+      const status = data.status;
+
+      // 🔹 лимит достигнут
+      if (status === "limit_reached") {
+        if (task.taskType === "daily") {
+          alert("Ты уже забрал XP за эту ежедневную задачу сегодня. Вернись завтра.");
+        } else {
+          alert("Лимит выполнений этой задачи для тебя уже достигнут.");
+        }
+
         setSubmitStatus((prev) => ({ ...prev, [taskId]: "already" }));
-      } else {
-        setSubmitStatus((prev) => ({ ...prev, [taskId]: "submitted" }));
+        return;
       }
+
+      // 🔹 задача уже отправлена
+      if (status === "already_submitted") {
+        setSubmitStatus((prev) => ({ ...prev, [taskId]: "already" }));
+        return;
+      }
+
+      // 🔹 какие-то edge-кейсы с неактивной/несуществующей задачей
+      if (status === "task_not_found") {
+        alert("Задача не найдена или была изменена. Обнови список задач.");
+        setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
+        return;
+      }
+
+      if (status === "task_inactive") {
+        alert("Эта задача больше не активна.");
+        setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
+        return;
+      }
+
+      // 🔹 Обычный кейс — заявка создана, статус pending
+      setSubmitStatus((prev) => ({ ...prev, [taskId]: "submitted" }));
     } catch (e) {
       console.error("Failed to submit task", e);
       setSubmitStatus((prev) => ({ ...prev, [taskId]: "error" }));
@@ -156,7 +193,7 @@ export default function EarnPage() {
     if (!task.isActive) label = "Недоступно";
     if (status === "pending") label = "Отправляем…";
     if (status === "submitted") label = "Отправлено, ждёт проверки";
-    if (status === "already") label = "Уже отправлена";
+    if (status === "already") label = "Лимит для тебя достигнут";
     if (status === "error") label = "Ошибка, попробовать снова";
 
     return (
