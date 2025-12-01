@@ -1,3 +1,4 @@
+// app/api/xp/tasks/pending/route.ts
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
       limit = n;
     }
 
-    // 1) Берём последние completion-заявки, БЕЗ фильтра по статусу
+    // 1) Берём ТОЛЬКО pending-заявки
     const { data, error } = await supabase
       .from("xp_task_completions")
       .select(
@@ -33,7 +34,8 @@ export async function POST(req: Request) {
         )
       `
       )
-      .order("created_at", { ascending: false }) // сначала самые новые
+      .eq("status", "pending")                    // 👈 фильтр по pending
+      .order("created_at", { ascending: false })  // новые сверху
       .limit(limit);
 
     if (error) {
@@ -51,7 +53,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2) Просто мапим всё как есть
+    // 2) Мапим в удобный формат
     const items = data.map((c: any) => {
       const t = c.task || null;
 
