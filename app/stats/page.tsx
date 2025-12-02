@@ -171,8 +171,8 @@ export default function StatsPage() {
     load();
   }, [userId]);
 
-  // 🔥 изменённый массив символов — все геометрические, без эмодзи
-  const glyphs = ["⟁", "✶", "⌗", "⋔", "✹", "⨀", "☼", "⌖", "⟡", "✴"];
+  // 🔹 только геометрические символы, без звёзд-эмодзи
+  const glyphs = ["⟁", "⌗", "⋔", "◬", "◇", "⬡", "⬢", "⬣", "⬟"];
 
   const defaultTrophyTitles = [
     "Пробуждение",
@@ -182,6 +182,7 @@ export default function StatsPage() {
     "Возгорание Сознания",
     "Ступень Отречения",
     "Посвящённый",
+    "Пересечение Теней",
     "Носитель Пламени",
     "Избранный Узел",
   ];
@@ -234,6 +235,10 @@ export default function StatsPage() {
   };
 
   const getTrophyGlyph = (t: ApiTrophy) => {
+    const titleLower = (t.title ?? "").toLowerCase();
+    if (titleLower.includes("избранный узел")) {
+      return "⬡";
+    }
     const idx = trophiesToRender.findIndex((x) => x.code === t.code);
     if (idx >= 0) return glyphs[idx % glyphs.length];
     return glyphs[0];
@@ -346,7 +351,7 @@ export default function StatsPage() {
           </div>
         </section>
 
-        {/* ===== TROФЕИ ===== */}
+        {/* ===== TROPHIES (КУЛЬТ) ===== */}
         <section>
           <h2 className="mb-1 text-sm font-medium text-zinc-100">Трофеи</h2>
           <p className="mb-3 text-[11px] text-zinc-500">
@@ -373,7 +378,13 @@ export default function StatsPage() {
                   t.code ??
                   "Неизвестный трофей";
 
-                const glyph = glyphs[idx % glyphs.length];
+                // базовый глиф по индексу
+                let glyph = glyphs[idx % glyphs.length];
+
+                // для «Избранного Узла» — фиксированный символ, который не превращается в эмодзи
+                if (title.toLowerCase().includes("избранный узел")) {
+                  glyph = "⬡";
+                }
 
                 return (
                   <button
@@ -419,9 +430,7 @@ export default function StatsPage() {
 
         {/* ===== XP HISTORY ===== */}
         <section>
-          <h2 className="mb-2 text-sm font-medium text-zinc-100">
-            История XP
-          </h2>
+          <h2 className="mb-2 text-sm font-medium text-zinc-100">История XP</h2>
 
           {loadingEvents && (
             <div className="rounded-xl border border-white/5 bg-zinc-950/40 p-3 text-xs text-zinc-400">
